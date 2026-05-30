@@ -441,11 +441,28 @@ function DashboardView({ trades, setActive, userName }) {
    ADD TRADE
 ═══════════════════════════════════════ */
 function AddTradeView({ onAdd, userId }) {
-  const blank = { date:"", asset:"NIFTY", type:"Long", entry:"", exit:"", qty:"", strategy:"Trend Follow", notes:"" };
+  const blank = { date:"", asset:"", type:"Long", entry:"", exit:"", qty:"", strategy:"Trend Follow", notes:"" };
   const [form, setForm] = useState(blank);
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [favourites, setFavourites] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("rr_fav_assets") || "[]"); } catch { return []; }
+  });
+
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const toggleFav = () => {
+    const asset = form.asset.trim().toUpperCase();
+    if (!asset) return;
+    const updated = favourites.includes(asset)
+      ? favourites.filter(f => f !== asset)
+      : [...favourites, asset];
+    setFavourites(updated);
+    localStorage.setItem("rr_fav_assets", JSON.stringify(updated));
+  };
+
+  const isFav = favourites.includes(form.asset.trim().toUpperCase());
+
   const calcPnl = () => {
     const e=parseFloat(form.entry),x=parseFloat(form.exit),q=parseFloat(form.qty);
     if(!e||!x||!q) return null;
@@ -454,10 +471,9 @@ function AddTradeView({ onAdd, userId }) {
   const pnl = calcPnl();
 
   const handleSubmit = async () => {
-    if(!form.date||!form.entry||!form.exit||!form.qty) return;
+    if(!form.date||!form.asset||!form.entry||!form.exit||!form.qty) return;
     setSaving(true);
-    const trade = { ...form, user_id:userId, entry:parseFloat(form.entry), exit:parseFloat(form.exit), qty:parseFloat(form.qty), pnl:pnl||0 };
-    // Save to Supabase
+    const trade = { ...form, asset: form.asset.trim().toUpperCase(), user_id:userId, entry:parseFloat(form.entry), exit:parseFloat(form.exit), qty:parseFloat(form.qty), pnl:pnl||0 };
     const { data, error } = await supabase.from("trades").insert([trade]).select().single();
     setSaving(false);
     if(!error && data) {
@@ -482,7 +498,34 @@ function AddTradeView({ onAdd, userId }) {
       <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"1.75rem", maxWidth:680 }}>
         <div style={row}>
           <div><label style={lbl}>Date</label><input type="date" style={inp} value={form.date} onChange={e=>set("date",e.target.value)}/></div>
-          <div><label style={lbl}>Asset</label><select style={{ ...inp, cursor:"pointer" }} value={form.asset} onChange={e=>set("asset",e.target.value)}>{ASSETS.map(a=><option key={a}>{a}</option>)}</select></div>
+          <div>
+            <label style={lbl}>Asset / Symbol</label>
+            <div style={{ display:"flex", gap:8 }}>
+              <input
+                style={{ ...inp, textTransform:"uppercase" }}
+                placeholder="Type any asset e.g. EURUSD, GOLD, BTC..."
+                value={form.asset}
+                onChange={e => set("asset", e.target.value.toUpperCase())}
+              />
+              <button onClick={toggleFav} title={isFav ? "Remove from favourites" : "Save to favourites"}
+                style={{ background: isFav ? "rgba(245,166,35,0.15)" : C.surface, border:`1px solid ${isFav ? "#f5a623" : C.border}`, borderRadius:9, padding:"0 0.85rem", cursor:"pointer", fontSize:20, flexShrink:0 }}>
+                {isFav ? "⭐" : "☆"}
+              </button>
+            </div>
+            {favourites.length > 0 && (
+              <div style={{ marginTop:8 }}>
+                <div style={{ fontSize:11, color:C.textSec, marginBottom:5 }}>⭐ Favourites — click to fill:</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                  {favourites.map(f => (
+                    <button key={f} onClick={() => set("asset", f)}
+                      style={{ background: form.asset===f ? C.redSoft : C.surface, border:`1px solid ${form.asset===f ? C.red : C.border}`, borderRadius:6, padding:"0.2rem 0.7rem", fontSize:12, color: form.asset===f ? C.red : C.textSec, cursor:"pointer", fontWeight:600, fontFamily:"inherit" }}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         <div style={row}>
           <div>

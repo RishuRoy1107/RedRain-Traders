@@ -7,7 +7,7 @@ import {
 import {
   TrendingUp, TrendingDown, Plus, LogOut, BarChart2, BookOpen,
   Home, Eye, EyeOff, ArrowUpRight, ArrowDownRight, Target,
-  Check, Trash2, Search, ChevronRight, Users, Shield, Zap
+  Check, Trash2, Search, ChevronRight, Users, Shield, Zap, Menu, X
 } from "lucide-react";
 
 /* ─── THEME ─── */
@@ -106,10 +106,6 @@ function AuthPage({ onLogin, onBack }) {
     }
   };
 
-  const handleGoogle = async () => {
-    await supabase.auth.signInWithOAuth({ provider:"google", options:{ redirectTo: window.location.origin } });
-  };
-
   return (
     <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"sans-serif", padding:"2rem" }}>
       <div style={{ width:"100%", maxWidth:400 }}>
@@ -124,28 +120,6 @@ function AuthPage({ onLogin, onBack }) {
         </div>
 
         <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"2rem" }}>
-
-          {/* GOOGLE LOGIN */}
-          <button onClick={handleGoogle} style={{
-            width:"100%", padding:"0.75rem", background:C.surface,
-            border:`1px solid ${C.border}`, borderRadius:9, color:C.text,
-            fontWeight:600, cursor:"pointer", fontSize:14, fontFamily:"inherit",
-            display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:16
-          }}>
-            <svg width="18" height="18" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-            </svg>
-            Continue with Google
-          </button>
-
-          <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
-            <div style={{ flex:1, height:1, background:C.border }} />
-            <span style={{ fontSize:12, color:C.textSec }}>or with email</span>
-            <div style={{ flex:1, height:1, background:C.border }} />
-          </div>
 
           {/* ERRORS & MESSAGES */}
           {error && (
@@ -327,7 +301,7 @@ function LandingPage({ onGetStarted }) {
 /* ═══════════════════════════════════════
    SIDEBAR
 ═══════════════════════════════════════ */
-function Sidebar({ active, setActive, onLogout, userName }) {
+function Sidebar({ active, setActive, onLogout, userName, isOpen, onToggle }) {
   const NAV = [
     { id:"dashboard", icon:Home,      label:"Dashboard"     },
     { id:"add",       icon:Plus,      label:"Log Trade"     },
@@ -335,30 +309,54 @@ function Sidebar({ active, setActive, onLogout, userName }) {
     { id:"analytics", icon:BarChart2, label:"Analytics"     },
   ];
   return (
-    <div style={{ width:220, background:C.surface, borderRight:`1px solid ${C.border}`, display:"flex", flexDirection:"column", padding:"1.25rem 0.75rem", fontFamily:"sans-serif" }}>
-      <div style={{ padding:"0 0.5rem 1.5rem", borderBottom:`1px solid ${C.border}`, marginBottom:"1rem" }}><Logo size="sm"/></div>
-      <div style={{ flex:1, display:"flex", flexDirection:"column", gap:4 }}>
-        {NAV.map(n => (
-          <button key={n.id} onClick={() => setActive(n.id)} style={{
-            display:"flex", alignItems:"center", gap:10, padding:"0.65rem 0.85rem", borderRadius:9, border:"none",
-            background:active===n.id?C.redSoft:"transparent", color:active===n.id?C.red:C.textSec,
-            cursor:"pointer", fontWeight:active===n.id?600:400, fontSize:14, fontFamily:"inherit",
-            borderLeft:active===n.id?`2px solid ${C.red}`:"2px solid transparent"
-          }}>
-            <n.icon size={16}/>{n.label}
+    <>
+      {/* COLLAPSED — just hamburger button */}
+      {!isOpen && (
+        <div style={{ width:52, background:C.surface, borderRight:`1px solid ${C.border}`, display:"flex", flexDirection:"column", alignItems:"center", padding:"1rem 0", gap:4, fontFamily:"sans-serif" }}>
+          <button onClick={onToggle} style={{ background:"transparent", border:"none", cursor:"pointer", color:C.textSec, padding:"0.5rem", borderRadius:8, marginBottom:8 }}>
+            <Menu size={20}/>
           </button>
-        ))}
-      </div>
-      <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:"1rem" }}>
-        <div style={{ padding:"0.5rem 0.85rem", marginBottom:8 }}>
-          <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{userName}</div>
-          <div style={{ fontSize:11, color:C.textSec }}>Pro Trader</div>
+          {NAV.map(n => (
+            <button key={n.id} onClick={()=>{ setActive(n.id); }} title={n.label} style={{ background:active===n.id?C.redSoft:"transparent", border:"none", cursor:"pointer", color:active===n.id?C.red:C.textSec, padding:"0.65rem", borderRadius:9, width:40, display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <n.icon size={18}/>
+            </button>
+          ))}
         </div>
-        <button onClick={onLogout} style={{ display:"flex", alignItems:"center", gap:10, padding:"0.65rem 0.85rem", borderRadius:9, border:"none", background:"transparent", color:C.textSec, cursor:"pointer", fontSize:14, fontFamily:"inherit", width:"100%" }}>
-          <LogOut size={16}/> Logout
-        </button>
-      </div>
-    </div>
+      )}
+
+      {/* OPEN SIDEBAR */}
+      {isOpen && (
+        <div style={{ width:220, background:C.surface, borderRight:`1px solid ${C.border}`, display:"flex", flexDirection:"column", padding:"1.25rem 0.75rem", fontFamily:"sans-serif", transition:"all 0.2s" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", paddingBottom:"1.25rem", borderBottom:`1px solid ${C.border}`, marginBottom:"1rem" }}>
+            <Logo size="sm"/>
+            <button onClick={onToggle} style={{ background:"transparent", border:"none", cursor:"pointer", color:C.textSec, padding:"0.3rem", borderRadius:6 }}>
+              <X size={16}/>
+            </button>
+          </div>
+          <div style={{ flex:1, display:"flex", flexDirection:"column", gap:4 }}>
+            {NAV.map(n => (
+              <button key={n.id} onClick={() => setActive(n.id)} style={{
+                display:"flex", alignItems:"center", gap:10, padding:"0.65rem 0.85rem", borderRadius:9, border:"none",
+                background:active===n.id?C.redSoft:"transparent", color:active===n.id?C.red:C.textSec,
+                cursor:"pointer", fontWeight:active===n.id?600:400, fontSize:14, fontFamily:"inherit",
+                borderLeft:active===n.id?`2px solid ${C.red}`:"2px solid transparent"
+              }}>
+                <n.icon size={16}/>{n.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:"1rem" }}>
+            <div style={{ padding:"0.5rem 0.85rem", marginBottom:8 }}>
+              <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{userName}</div>
+              <div style={{ fontSize:11, color:C.textSec }}>Pro Trader</div>
+            </div>
+            <button onClick={onLogout} style={{ display:"flex", alignItems:"center", gap:10, padding:"0.65rem 0.85rem", borderRadius:9, border:"none", background:"transparent", color:C.textSec, cursor:"pointer", fontSize:14, fontFamily:"inherit", width:"100%" }}>
+              <LogOut size={16}/> Logout
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -478,8 +476,8 @@ function AssetInput({ value, onChange, favourites, onToggleFav }) {
 
 function AddTradeView({ onAdd, userId }) {
   const [tradeMode, setTradeMode] = useState("cfd");
-  const blankCfd = { date:"", asset:"", type:"Long", entry:"", exit:"", lotSize:"", currency:"USD", strategy:"Trend Follow", notes:"" };
-  const blankFo  = { date:"", asset:"", instrument:"Futures", type:"Long", entry:"", exit:"", qty:"", currency:"USD", strategy:"Trend Follow", notes:"" };
+  const blankCfd = { date:"", asset:"", type:"Long", entry:"", exit:"", lotSize:"", sl:"", tp:"", pnl:"", currency:"USD", strategy:"Trend Follow", notes:"" };
+  const blankFo  = { date:"", asset:"", instrument:"Futures", type:"Long", entry:"", exit:"", qty:"", sl:"", tp:"", pnl:"", currency:"USD", strategy:"Trend Follow", notes:"" };
   const [cfdForm,  setCfdForm]  = useState(blankCfd);
   const [foForm,   setFoForm]   = useState(blankFo);
   const [success, setSuccess]   = useState(false);
@@ -501,20 +499,12 @@ function AddTradeView({ onAdd, userId }) {
 
   const currSymbol = (code) => CURRENCIES.find(c=>c.code===code)?.symbol || "$";
 
-  const calcPnl = () => {
-    const f = tradeMode==="cfd" ? cfdForm : foForm;
-    const qty = tradeMode==="cfd" ? parseFloat(f.lotSize) : parseFloat(f.qty);
-    const e=parseFloat(f.entry), x=parseFloat(f.exit), q=qty;
-    if(!e||!x||!q) return null;
-    return +(f.type==="Long"?(x-e)*q:(e-x)*q).toFixed(2);
-  };
-  const pnl = calcPnl();
-
   const handleSubmit = async () => {
     const f = tradeMode==="cfd" ? cfdForm : foForm;
     const qty = tradeMode==="cfd" ? f.lotSize : f.qty;
-    if(!f.date||!f.asset||!f.entry||!f.exit||!qty) return;
+    if(!f.date||!f.asset||!f.entry||!f.exit||!qty||f.pnl==="") return;
     setSaving(true);
+    const manualPnl = parseFloat(f.pnl);
     const trade = {
       ...f,
       trade_mode: tradeMode,
@@ -522,8 +512,10 @@ function AddTradeView({ onAdd, userId }) {
       user_id: userId,
       entry: parseFloat(f.entry),
       exit: parseFloat(f.exit),
-      qty: parseFloat(qty),
-      pnl: pnl||0
+      qty: Math.abs(parseFloat(qty)),
+      sl: f.sl ? parseFloat(f.sl) : null,
+      tp: f.tp ? parseFloat(f.tp) : null,
+      pnl: isNaN(manualPnl) ? 0 : manualPnl
     };
     const { data, error } = await supabase.from("trades").insert([trade]).select().single();
     setSaving(false);
@@ -539,6 +531,8 @@ function AddTradeView({ onAdd, userId }) {
   const lbl = { fontSize:13, color:C.textSec, marginBottom:6, display:"block", fontWeight:500 };
   const row = { display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16 };
   const sym = currSymbol(tradeMode==="cfd" ? cfdForm.currency : foForm.currency);
+  const activePnl = tradeMode==="cfd" ? cfdForm.pnl : foForm.pnl;
+  const pnlNum = parseFloat(activePnl);
 
   return (
     <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1 }}>
@@ -600,9 +594,13 @@ function AddTradeView({ onAdd, userId }) {
               <div><label style={lbl}>Entry Price ({sym})</label><input type="number" style={inp} placeholder="1.2050" value={cfdForm.entry} onChange={e=>setCfd("entry",e.target.value)}/></div>
               <div><label style={lbl}>Exit Price ({sym})</label><input type="number" style={inp} placeholder="1.2150" value={cfdForm.exit} onChange={e=>setCfd("exit",e.target.value)}/></div>
             </div>
-            <div style={{ marginBottom:16 }}><label style={lbl}>Lot Size</label><input type="number" style={{ ...inp, maxWidth:200 }} placeholder="e.g. 0.1" value={cfdForm.lotSize} onChange={e=>setCfd("lotSize",e.target.value)}/></div>
             <div style={row}>
+              <div><label style={lbl}>Lot Size</label><input type="number" min="0" step="0.01" style={inp} placeholder="e.g. 0.1" value={cfdForm.lotSize} onChange={e=>setCfd("lotSize", Math.abs(e.target.value).toString())}/></div>
               <div><label style={lbl}>Strategy</label><select style={{ ...inp, cursor:"pointer" }} value={cfdForm.strategy} onChange={e=>setCfd("strategy",e.target.value)}>{STRATEGIES.map(s=><option key={s}>{s}</option>)}</select></div>
+            </div>
+            <div style={row}>
+              <div><label style={lbl}>Stop Loss — SL ({sym}) <span style={{color:C.textSec,fontWeight:400}}>(optional)</span></label><input type="number" min="0" style={inp} placeholder="e.g. 1.1950" value={cfdForm.sl} onChange={e=>setCfd("sl",e.target.value)}/></div>
+              <div><label style={lbl}>Take Profit — TP ({sym}) <span style={{color:C.textSec,fontWeight:400}}>(optional)</span></label><input type="number" min="0" style={inp} placeholder="e.g. 1.2300" value={cfdForm.tp} onChange={e=>setCfd("tp",e.target.value)}/></div>
             </div>
           </>
         )}
@@ -653,12 +651,37 @@ function AddTradeView({ onAdd, userId }) {
               <div><label style={lbl}>Entry Price ({sym})</label><input type="number" style={inp} placeholder="22100" value={foForm.entry} onChange={e=>setFo("entry",e.target.value)}/></div>
               <div><label style={lbl}>Exit Price ({sym})</label><input type="number" style={inp} placeholder="22340" value={foForm.exit} onChange={e=>setFo("exit",e.target.value)}/></div>
             </div>
-            <div style={{ marginBottom:16 }}><label style={lbl}>Quantity / Lots</label><input type="number" style={{ ...inp, maxWidth:200 }} placeholder="1" value={foForm.qty} onChange={e=>setFo("qty",e.target.value)}/></div>
             <div style={row}>
+              <div><label style={lbl}>Quantity / Lots</label><input type="number" min="0" step="1" style={inp} placeholder="1" value={foForm.qty} onChange={e=>setFo("qty", Math.abs(e.target.value).toString())}/></div>
               <div><label style={lbl}>Strategy</label><select style={{ ...inp, cursor:"pointer" }} value={foForm.strategy} onChange={e=>setFo("strategy",e.target.value)}>{STRATEGIES.map(s=><option key={s}>{s}</option>)}</select></div>
+            </div>
+            <div style={row}>
+              <div><label style={lbl}>Stop Loss — SL ({sym}) <span style={{color:C.textSec,fontWeight:400}}>(optional)</span></label><input type="number" min="0" style={inp} placeholder="e.g. 21800" value={foForm.sl} onChange={e=>setFo("sl",e.target.value)}/></div>
+              <div><label style={lbl}>Take Profit — TP ({sym}) <span style={{color:C.textSec,fontWeight:400}}>(optional)</span></label><input type="number" min="0" style={inp} placeholder="e.g. 22500" value={foForm.tp} onChange={e=>setFo("tp",e.target.value)}/></div>
             </div>
           </>
         )}
+
+        <div style={{ marginBottom:16 }}>
+          <label style={lbl}>Actual P&L ({sym}) <span style={{color:C.red,fontWeight:600}}>*</span></label>
+          <div style={{ position:"relative" }}>
+            <input
+              type="number"
+              style={{ ...inp, border:`1px solid ${activePnl!==""?(pnlNum>=0?"rgba(31,208,122,0.5)":"rgba(230,57,70,0.5)"):C.border}`, paddingRight:80 }}
+              placeholder="Enter profit (+) or loss (-) e.g. 250 or -150"
+              value={tradeMode==="cfd"?cfdForm.pnl:foForm.pnl}
+              onChange={e=>tradeMode==="cfd"?setCfd("pnl",e.target.value):setFo("pnl",e.target.value)}
+            />
+            {activePnl!=="" && !isNaN(pnlNum) && (
+              <span style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", fontSize:13, fontWeight:700, fontFamily:"monospace", color:pnlNum>=0?C.green:C.red }}>
+                {pnlNum>=0?"+":""}{sym}{Math.abs(pnlNum).toLocaleString()}
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize:11, color:C.textSec, marginTop:5 }}>
+            💡 Profit → positive number (e.g. 250) &nbsp;|&nbsp; Loss → negative number (e.g. -150)
+          </div>
+        </div>
 
         <div style={{ marginBottom:20 }}>
           <label style={lbl}>Trade Notes</label>
@@ -667,13 +690,6 @@ function AddTradeView({ onAdd, userId }) {
             value={tradeMode==="cfd"?cfdForm.notes:foForm.notes}
             onChange={e=>tradeMode==="cfd"?setCfd("notes",e.target.value):setFo("notes",e.target.value)}/>
         </div>
-
-        {pnl!==null && (
-          <div style={{ background:pnl>=0?C.greenSoft:C.redSoft, border:`1px solid ${pnl>=0?"rgba(31,208,122,0.25)":C.redBorder}`, borderRadius:10, padding:"0.85rem 1rem", marginBottom:16, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <span style={{ fontSize:14, color:C.textSec }}>Estimated P&L</span>
-            <span style={{ fontSize:20, fontWeight:800, fontFamily:"monospace", color:pnl>=0?C.green:C.red }}>{pnl>=0?"+":""}{sym}{Math.abs(pnl).toLocaleString()}</span>
-          </div>
-        )}
 
         <button onClick={handleSubmit} disabled={saving} style={{ background:saving?"#333":C.red, color:"#fff", border:"none", borderRadius:10, padding:"0.85rem 2rem", fontWeight:700, cursor:saving?"not-allowed":"pointer", fontSize:15, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}>
           <Plus size={16}/>{saving?"Saving...":"Log This Trade"}
@@ -851,6 +867,7 @@ export default function App() {
   const [user, setUser]     = useState({ name:"", id:"" });
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Check if user is already logged in (session persists across page refresh)
   useEffect(()=>{
@@ -900,7 +917,7 @@ export default function App() {
 
   return (
     <div style={{ display:"flex", height:"100vh", background:C.bg, fontFamily:"sans-serif", overflow:"hidden" }}>
-      <Sidebar active={tab} setActive={setTab} userName={user.name} onLogout={handleLogout}/>
+      <Sidebar active={tab} setActive={setTab} userName={user.name} onLogout={handleLogout} isOpen={sidebarOpen} onToggle={()=>setSidebarOpen(v=>!v)}/>
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
         <div style={{ padding:"0.85rem 2rem", borderBottom:`1px solid ${C.border}`, background:C.surface, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div style={{ fontSize:13, color:C.textSec }}>

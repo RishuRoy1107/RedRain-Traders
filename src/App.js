@@ -440,46 +440,97 @@ function DashboardView({ trades, setActive, userName }) {
 /* ═══════════════════════════════════════
    ADD TRADE
 ═══════════════════════════════════════ */
+const CURRENCIES = [
+  { code:"USD", symbol:"$" },
+  { code:"INR", symbol:"₹" },
+  { code:"EUR", symbol:"€" },
+];
+
+function AssetInput({ value, onChange, favourites, onToggleFav }) {
+  const isFav = favourites.includes(value.trim().toUpperCase());
+  const inp = { background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, padding:"0.7rem 1rem", color:C.text, fontSize:14, outline:"none", width:"100%", boxSizing:"border-box", fontFamily:"inherit" };
+  return (
+    <div>
+      <div style={{ display:"flex", gap:8 }}>
+        <input style={{ ...inp, textTransform:"uppercase" }} placeholder="e.g. EURUSD, GOLD, BTC, NIFTY..."
+          value={value} onChange={e => onChange(e.target.value.toUpperCase())} />
+        <button onClick={onToggleFav} title={isFav ? "Remove from favourites" : "Save to favourites"}
+          style={{ background: isFav ? "rgba(245,166,35,0.15)" : C.surface, border:`1px solid ${isFav ? "#f5a623" : C.border}`, borderRadius:9, padding:"0 0.85rem", cursor:"pointer", fontSize:20, flexShrink:0 }}>
+          {isFav ? "⭐" : "☆"}
+        </button>
+      </div>
+      {favourites.length > 0 && (
+        <div style={{ marginTop:8 }}>
+          <div style={{ fontSize:11, color:C.textSec, marginBottom:5 }}>⭐ Favourites:</div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {favourites.map(f => (
+              <button key={f} onClick={() => onChange(f)}
+                style={{ background: value===f ? C.redSoft : C.surface, border:`1px solid ${value===f ? C.red : C.border}`, borderRadius:6, padding:"0.2rem 0.7rem", fontSize:12, color: value===f ? C.red : C.textSec, cursor:"pointer", fontWeight:600, fontFamily:"inherit" }}>
+                {f}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AddTradeView({ onAdd, userId }) {
-  const blank = { date:"", asset:"", type:"Long", entry:"", exit:"", qty:"", strategy:"Trend Follow", notes:"" };
-  const [form, setForm] = useState(blank);
-  const [success, setSuccess] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [tradeMode, setTradeMode] = useState("cfd");
+  const blankCfd = { date:"", asset:"", type:"Long", entry:"", exit:"", lotSize:"", currency:"USD", strategy:"Trend Follow", notes:"" };
+  const blankFo  = { date:"", asset:"", instrument:"Futures", type:"Long", entry:"", exit:"", qty:"", currency:"USD", strategy:"Trend Follow", notes:"" };
+  const [cfdForm,  setCfdForm]  = useState(blankCfd);
+  const [foForm,   setFoForm]   = useState(blankFo);
+  const [success, setSuccess]   = useState(false);
+  const [saving,  setSaving]    = useState(false);
   const [favourites, setFavourites] = useState(() => {
     try { return JSON.parse(localStorage.getItem("rr_fav_assets") || "[]"); } catch { return []; }
   });
 
-  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  const setCfd = (k,v) => setCfdForm(f=>({...f,[k]:v}));
+  const setFo  = (k,v) => setFoForm(f=>({...f,[k]:v}));
 
-  const toggleFav = () => {
-    const asset = form.asset.trim().toUpperCase();
-    if (!asset) return;
-    const updated = favourites.includes(asset)
-      ? favourites.filter(f => f !== asset)
-      : [...favourites, asset];
+  const toggleFav = (asset) => {
+    const a = asset.trim().toUpperCase();
+    if (!a) return;
+    const updated = favourites.includes(a) ? favourites.filter(x=>x!==a) : [...favourites, a];
     setFavourites(updated);
     localStorage.setItem("rr_fav_assets", JSON.stringify(updated));
   };
 
-  const isFav = favourites.includes(form.asset.trim().toUpperCase());
+  const currSymbol = (code) => CURRENCIES.find(c=>c.code===code)?.symbol || "$";
 
   const calcPnl = () => {
-    const e=parseFloat(form.entry),x=parseFloat(form.exit),q=parseFloat(form.qty);
+    const f = tradeMode==="cfd" ? cfdForm : foForm;
+    const qty = tradeMode==="cfd" ? parseFloat(f.lotSize) : parseFloat(f.qty);
+    const e=parseFloat(f.entry), x=parseFloat(f.exit), q=qty;
     if(!e||!x||!q) return null;
-    return Math.round(form.type==="Long"?(x-e)*q:(e-x)*q);
+    return +(f.type==="Long"?(x-e)*q:(e-x)*q).toFixed(2);
   };
   const pnl = calcPnl();
 
   const handleSubmit = async () => {
-    if(!form.date||!form.asset||!form.entry||!form.exit||!form.qty) return;
+    const f = tradeMode==="cfd" ? cfdForm : foForm;
+    const qty = tradeMode==="cfd" ? f.lotSize : f.qty;
+    if(!f.date||!f.asset||!f.entry||!f.exit||!qty) return;
     setSaving(true);
-    const trade = { ...form, asset: form.asset.trim().toUpperCase(), user_id:userId, entry:parseFloat(form.entry), exit:parseFloat(form.exit), qty:parseFloat(form.qty), pnl:pnl||0 };
+    const trade = {
+      ...f,
+      trade_mode: tradeMode,
+      asset: f.asset.trim().toUpperCase(),
+      user_id: userId,
+      entry: parseFloat(f.entry),
+      exit: parseFloat(f.exit),
+      qty: parseFloat(qty),
+      pnl: pnl||0
+    };
     const { data, error } = await supabase.from("trades").insert([trade]).select().single();
     setSaving(false);
     if(!error && data) {
       onAdd(data);
       setSuccess(true);
-      setForm(blank);
+      tradeMode==="cfd" ? setCfdForm(blankCfd) : setFoForm(blankFo);
       setTimeout(()=>setSuccess(false), 3000);
     }
   };
@@ -487,6 +538,7 @@ function AddTradeView({ onAdd, userId }) {
   const inp = { background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, padding:"0.7rem 1rem", color:C.text, fontSize:14, outline:"none", width:"100%", boxSizing:"border-box", fontFamily:"inherit" };
   const lbl = { fontSize:13, color:C.textSec, marginBottom:6, display:"block", fontWeight:500 };
   const row = { display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16 };
+  const sym = currSymbol(tradeMode==="cfd" ? cfdForm.currency : foForm.currency);
 
   return (
     <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1 }}>
@@ -494,64 +546,135 @@ function AddTradeView({ onAdd, userId }) {
         <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Log a New Trade</h1>
         <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Record every detail of your trade for better analysis.</p>
       </div>
-      {success && <div style={{ background:C.greenSoft, border:"1px solid rgba(31,208,122,0.3)", borderRadius:10, padding:"0.85rem 1rem", marginBottom:20, color:C.green, fontSize:14, display:"flex", alignItems:"center", gap:8 }}><Check size={16}/> Trade saved to your account! Dashboard updated.</div>}
+
+      {/* TOGGLE */}
+      <div style={{ display:"flex", gap:0, marginBottom:24, background:C.surface, border:`1px solid ${C.border}`, borderRadius:10, padding:4, maxWidth:320, width:"100%" }}>
+        {[["cfd","CFD"],["fo","Futures & Options"]].map(([mode, label])=>(
+          <button key={mode} onClick={()=>setTradeMode(mode)} style={{
+            flex:1, padding:"0.6rem 1rem", borderRadius:8, border:"none",
+            background: tradeMode===mode ? C.red : "transparent",
+            color: tradeMode===mode ? "#fff" : C.textSec,
+            fontWeight:600, cursor:"pointer", fontSize:13, fontFamily:"inherit",
+            transition:"all 0.2s"
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {success && <div style={{ background:C.greenSoft, border:"1px solid rgba(31,208,122,0.3)", borderRadius:10, padding:"0.85rem 1rem", marginBottom:20, color:C.green, fontSize:14, display:"flex", alignItems:"center", gap:8 }}><Check size={16}/> Trade saved! Dashboard updated.</div>}
+
       <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"1.75rem", maxWidth:680 }}>
-        <div style={row}>
-          <div><label style={lbl}>Date</label><input type="date" style={inp} value={form.date} onChange={e=>set("date",e.target.value)}/></div>
-          <div>
-            <label style={lbl}>Asset / Symbol</label>
-            <div style={{ display:"flex", gap:8 }}>
-              <input
-                style={{ ...inp, textTransform:"uppercase" }}
-                placeholder="Type any asset e.g. EURUSD, GOLD, BTC..."
-                value={form.asset}
-                onChange={e => set("asset", e.target.value.toUpperCase())}
-              />
-              <button onClick={toggleFav} title={isFav ? "Remove from favourites" : "Save to favourites"}
-                style={{ background: isFav ? "rgba(245,166,35,0.15)" : C.surface, border:`1px solid ${isFav ? "#f5a623" : C.border}`, borderRadius:9, padding:"0 0.85rem", cursor:"pointer", fontSize:20, flexShrink:0 }}>
-                {isFav ? "⭐" : "☆"}
-              </button>
+
+        {/* ── CFD FORM ── */}
+        {tradeMode==="cfd" && (
+          <>
+            <div style={row}>
+              <div><label style={lbl}>Date</label><input type="date" style={inp} value={cfdForm.date} onChange={e=>setCfd("date",e.target.value)}/></div>
+              <div>
+                <label style={lbl}>Asset / Symbol</label>
+                <AssetInput value={cfdForm.asset} onChange={v=>setCfd("asset",v)} favourites={favourites} onToggleFav={()=>toggleFav(cfdForm.asset)}/>
+              </div>
             </div>
-            {favourites.length > 0 && (
-              <div style={{ marginTop:8 }}>
-                <div style={{ fontSize:11, color:C.textSec, marginBottom:5 }}>⭐ Favourites — click to fill:</div>
-                <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-                  {favourites.map(f => (
-                    <button key={f} onClick={() => set("asset", f)}
-                      style={{ background: form.asset===f ? C.redSoft : C.surface, border:`1px solid ${form.asset===f ? C.red : C.border}`, borderRadius:6, padding:"0.2rem 0.7rem", fontSize:12, color: form.asset===f ? C.red : C.textSec, cursor:"pointer", fontWeight:600, fontFamily:"inherit" }}>
-                      {f}
+            <div style={row}>
+              <div>
+                <label style={lbl}>Direction</label>
+                <div style={{ display:"flex", gap:10 }}>
+                  {["Long","Short"].map(t=>(
+                    <button key={t} onClick={()=>setCfd("type",t)} style={{ flex:1, padding:"0.7rem", border:`1px solid ${cfdForm.type===t?(t==="Long"?C.green:C.red):C.border}`, borderRadius:9, background:cfdForm.type===t?(t==="Long"?C.greenSoft:C.redSoft):"transparent", color:cfdForm.type===t?(t==="Long"?C.green:C.red):C.textSec, fontWeight:600, cursor:"pointer", fontSize:14, fontFamily:"inherit" }}>
+                      {t==="Long"?"📈 Long":"📉 Short"}
                     </button>
                   ))}
                 </div>
               </div>
-            )}
-          </div>
-        </div>
-        <div style={row}>
-          <div>
-            <label style={lbl}>Direction</label>
-            <div style={{ display:"flex", gap:10 }}>
-              {["Long","Short"].map(t=>(
-                <button key={t} onClick={()=>set("type",t)} style={{ flex:1, padding:"0.7rem", border:`1px solid ${form.type===t?(t==="Long"?C.green:C.red):C.border}`, borderRadius:9, background:form.type===t?(t==="Long"?C.greenSoft:C.redSoft):"transparent", color:form.type===t?(t==="Long"?C.green:C.red):C.textSec, fontWeight:600, cursor:"pointer", fontSize:14, fontFamily:"inherit" }}>
-                  {t==="Long"?"📈 Long":"📉 Short"}
-                </button>
-              ))}
+              <div>
+                <label style={lbl}>Currency</label>
+                <div style={{ display:"flex", gap:8 }}>
+                  {CURRENCIES.map(c=>(
+                    <button key={c.code} onClick={()=>setCfd("currency",c.code)} style={{ flex:1, padding:"0.65rem", border:`1px solid ${cfdForm.currency===c.code?C.red:C.border}`, borderRadius:9, background:cfdForm.currency===c.code?C.redSoft:"transparent", color:cfdForm.currency===c.code?C.red:C.textSec, fontWeight:700, cursor:"pointer", fontSize:13, fontFamily:"inherit" }}>
+                      {c.symbol} {c.code}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
-          <div><label style={lbl}>Strategy</label><select style={{ ...inp, cursor:"pointer" }} value={form.strategy} onChange={e=>set("strategy",e.target.value)}>{STRATEGIES.map(s=><option key={s}>{s}</option>)}</select></div>
+            <div style={row}>
+              <div><label style={lbl}>Entry Price ({sym})</label><input type="number" style={inp} placeholder="1.2050" value={cfdForm.entry} onChange={e=>setCfd("entry",e.target.value)}/></div>
+              <div><label style={lbl}>Exit Price ({sym})</label><input type="number" style={inp} placeholder="1.2150" value={cfdForm.exit} onChange={e=>setCfd("exit",e.target.value)}/></div>
+            </div>
+            <div style={{ marginBottom:16 }}><label style={lbl}>Lot Size</label><input type="number" style={{ ...inp, maxWidth:200 }} placeholder="e.g. 0.1" value={cfdForm.lotSize} onChange={e=>setCfd("lotSize",e.target.value)}/></div>
+            <div style={row}>
+              <div><label style={lbl}>Strategy</label><select style={{ ...inp, cursor:"pointer" }} value={cfdForm.strategy} onChange={e=>setCfd("strategy",e.target.value)}>{STRATEGIES.map(s=><option key={s}>{s}</option>)}</select></div>
+            </div>
+          </>
+        )}
+
+        {/* ── FUTURES & OPTIONS FORM ── */}
+        {tradeMode==="fo" && (
+          <>
+            <div style={row}>
+              <div><label style={lbl}>Date</label><input type="date" style={inp} value={foForm.date} onChange={e=>setFo("date",e.target.value)}/></div>
+              <div>
+                <label style={lbl}>Asset / Symbol</label>
+                <AssetInput value={foForm.asset} onChange={v=>setFo("asset",v)} favourites={favourites} onToggleFav={()=>toggleFav(foForm.asset)}/>
+              </div>
+            </div>
+            <div style={row}>
+              <div>
+                <label style={lbl}>Instrument</label>
+                <div style={{ display:"flex", gap:10 }}>
+                  {["Futures","Options"].map(inst=>(
+                    <button key={inst} onClick={()=>setFo("instrument",inst)} style={{ flex:1, padding:"0.7rem", border:`1px solid ${foForm.instrument===inst?C.blue:C.border}`, borderRadius:9, background:foForm.instrument===inst?"rgba(74,158,255,0.1)":"transparent", color:foForm.instrument===inst?C.blue:C.textSec, fontWeight:600, cursor:"pointer", fontSize:14, fontFamily:"inherit" }}>
+                      {inst==="Futures"?"📊 Futures":"🎯 Options"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label style={lbl}>Direction</label>
+                <div style={{ display:"flex", gap:10 }}>
+                  {["Long","Short"].map(t=>(
+                    <button key={t} onClick={()=>setFo("type",t)} style={{ flex:1, padding:"0.7rem", border:`1px solid ${foForm.type===t?(t==="Long"?C.green:C.red):C.border}`, borderRadius:9, background:foForm.type===t?(t==="Long"?C.greenSoft:C.redSoft):"transparent", color:foForm.type===t?(t==="Long"?C.green:C.red):C.textSec, fontWeight:600, cursor:"pointer", fontSize:14, fontFamily:"inherit" }}>
+                      {t==="Long"?"📈 Long":"📉 Short"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div style={{ marginBottom:16 }}>
+              <label style={lbl}>Currency</label>
+              <div style={{ display:"flex", gap:8, maxWidth:320 }}>
+                {CURRENCIES.map(c=>(
+                  <button key={c.code} onClick={()=>setFo("currency",c.code)} style={{ flex:1, padding:"0.65rem", border:`1px solid ${foForm.currency===c.code?C.red:C.border}`, borderRadius:9, background:foForm.currency===c.code?C.redSoft:"transparent", color:foForm.currency===c.code?C.red:C.textSec, fontWeight:700, cursor:"pointer", fontSize:13, fontFamily:"inherit" }}>
+                    {c.symbol} {c.code}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={row}>
+              <div><label style={lbl}>Entry Price ({sym})</label><input type="number" style={inp} placeholder="22100" value={foForm.entry} onChange={e=>setFo("entry",e.target.value)}/></div>
+              <div><label style={lbl}>Exit Price ({sym})</label><input type="number" style={inp} placeholder="22340" value={foForm.exit} onChange={e=>setFo("exit",e.target.value)}/></div>
+            </div>
+            <div style={{ marginBottom:16 }}><label style={lbl}>Quantity / Lots</label><input type="number" style={{ ...inp, maxWidth:200 }} placeholder="1" value={foForm.qty} onChange={e=>setFo("qty",e.target.value)}/></div>
+            <div style={row}>
+              <div><label style={lbl}>Strategy</label><select style={{ ...inp, cursor:"pointer" }} value={foForm.strategy} onChange={e=>setFo("strategy",e.target.value)}>{STRATEGIES.map(s=><option key={s}>{s}</option>)}</select></div>
+            </div>
+          </>
+        )}
+
+        <div style={{ marginBottom:20 }}>
+          <label style={lbl}>Trade Notes</label>
+          <textarea style={{ ...inp, resize:"vertical", minHeight:90, lineHeight:1.6 }}
+            placeholder="What was your reasoning? What did you learn?"
+            value={tradeMode==="cfd"?cfdForm.notes:foForm.notes}
+            onChange={e=>tradeMode==="cfd"?setCfd("notes",e.target.value):setFo("notes",e.target.value)}/>
         </div>
-        <div style={row}>
-          <div><label style={lbl}>Entry Price (₹)</label><input type="number" style={inp} placeholder="22100" value={form.entry} onChange={e=>set("entry",e.target.value)}/></div>
-          <div><label style={lbl}>Exit Price (₹)</label><input type="number" style={inp} placeholder="22340" value={form.exit} onChange={e=>set("exit",e.target.value)}/></div>
-        </div>
-        <div style={{ marginBottom:16 }}><label style={lbl}>Quantity / Lots</label><input type="number" style={{ ...inp, maxWidth:200 }} placeholder="1" value={form.qty} onChange={e=>set("qty",e.target.value)}/></div>
+
         {pnl!==null && (
           <div style={{ background:pnl>=0?C.greenSoft:C.redSoft, border:`1px solid ${pnl>=0?"rgba(31,208,122,0.25)":C.redBorder}`, borderRadius:10, padding:"0.85rem 1rem", marginBottom:16, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <span style={{ fontSize:14, color:C.textSec }}>Estimated P&L</span>
-            <span style={{ fontSize:20, fontWeight:800, fontFamily:"monospace", color:pnl>=0?C.green:C.red }}>{pnl>=0?"+":""}₹{Math.abs(pnl).toLocaleString("en-IN")}</span>
+            <span style={{ fontSize:20, fontWeight:800, fontFamily:"monospace", color:pnl>=0?C.green:C.red }}>{pnl>=0?"+":""}{sym}{Math.abs(pnl).toLocaleString()}</span>
           </div>
         )}
-        <div style={{ marginBottom:20 }}><label style={lbl}>Trade Notes</label><textarea style={{ ...inp, resize:"vertical", minHeight:90, lineHeight:1.6 }} placeholder="What was your reasoning? What did you learn?" value={form.notes} onChange={e=>set("notes",e.target.value)}/></div>
+
         <button onClick={handleSubmit} disabled={saving} style={{ background:saving?"#333":C.red, color:"#fff", border:"none", borderRadius:10, padding:"0.85rem 2rem", fontWeight:700, cursor:saving?"not-allowed":"pointer", fontSize:15, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}>
           <Plus size={16}/>{saving?"Saving...":"Log This Trade"}
         </button>

@@ -502,24 +502,36 @@ function AddTradeView({ onAdd, userId }) {
   const handleSubmit = async () => {
     const f = tradeMode==="cfd" ? cfdForm : foForm;
     const qty = tradeMode==="cfd" ? f.lotSize : f.qty;
-    if(!f.date||!f.asset||!f.entry||!f.exit||!qty||f.pnl==="") return;
+    if(!f.date||!f.asset||!f.entry||!f.exit||!qty||f.pnl==="") {
+      alert("Please fill in all required fields including Actual P&L!");
+      return;
+    }
     setSaving(true);
     const manualPnl = parseFloat(f.pnl);
     const trade = {
-      ...f,
-      trade_mode: tradeMode,
+      date: f.date,
       asset: f.asset.trim().toUpperCase(),
-      user_id: userId,
+      type: f.type,
       entry: parseFloat(f.entry),
       exit: parseFloat(f.exit),
       qty: Math.abs(parseFloat(qty)),
+      strategy: f.strategy,
+      notes: f.notes || "",
+      currency: f.currency,
+      trade_mode: tradeMode,
+      instrument: f.instrument || null,
       sl: f.sl ? parseFloat(f.sl) : null,
       tp: f.tp ? parseFloat(f.tp) : null,
-      pnl: isNaN(manualPnl) ? 0 : manualPnl
+      pnl: isNaN(manualPnl) ? 0 : manualPnl,
+      user_id: userId,
     };
     const { data, error } = await supabase.from("trades").insert([trade]).select().single();
     setSaving(false);
-    if(!error && data) {
+    if(error) {
+      alert("Error saving trade: " + error.message);
+      return;
+    }
+    if(data) {
       onAdd(data);
       setSuccess(true);
       tradeMode==="cfd" ? setCfdForm(blankCfd) : setFoForm(blankFo);

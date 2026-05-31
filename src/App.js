@@ -7,7 +7,7 @@ import {
 import {
   TrendingUp, TrendingDown, Plus, LogOut, BarChart2, BookOpen,
   Home, Eye, EyeOff, ArrowUpRight, ArrowDownRight, Target,
-  Check, Trash2, Search, ChevronRight, Users, Shield, Zap, Menu, X
+  Check, Trash2, Search, ChevronRight, Users, Shield, Zap, Menu, X, Settings
 } from "lucide-react";
 
 /* ─── THEME ─── */
@@ -22,6 +22,22 @@ const C = {
 
 /* ─── UTILS ─── */
 const fmt = (n) => (n >= 0 ? "+" : "") + n.toLocaleString("en-IN");
+
+/* ─── EXCHANGE RATE API ─── */
+const EXCHANGE_API_KEY = "5b4fd9f23287a50f71f2f27d";
+const CURRENCIES_LIST = [
+  { code:"USD", symbol:"$",  name:"US Dollar"  },
+  { code:"INR", symbol:"₹",  name:"Indian Rupee"},
+  { code:"EUR", symbol:"€",  name:"Euro"        },
+];
+
+async function fetchRates(base) {
+  try {
+    const res = await fetch(`https://v6.exchangerate-api.com/v6/${EXCHANGE_API_KEY}/latest/${base}`);
+    const data = await res.json();
+    return data.conversion_rates || {};
+  } catch { return {}; }
+}
 
 /* ─── LOGO ─── */
 function Logo({ size = "md" }) {
@@ -307,6 +323,7 @@ function Sidebar({ active, setActive, onLogout, userName, isOpen, onToggle }) {
     { id:"add",       icon:Plus,      label:"Log Trade"     },
     { id:"history",   icon:BookOpen,  label:"Trade History" },
     { id:"analytics", icon:BarChart2, label:"Analytics"     },
+    { id:"settings",  icon:Settings,  label:"Settings"      },
   ];
   return (
     <>
@@ -366,17 +383,19 @@ const ASSETS = ["NIFTY","BANKNIFTY","RELIANCE","INFY","TCS","HDFC","WIPRO","ONGC
 /* ═══════════════════════════════════════
    DASHBOARD
 ═══════════════════════════════════════ */
-function DashboardView({ trades, setActive, userName }) {
+function DashboardView({ trades, setActive, userName, convertPnl, currSym }) {
+  const cp = (pnl, t) => convertPnl ? convertPnl(pnl, t?.currency || "USD") : pnl;
   const stats = useMemo(() => {
-    const wins = trades.filter(t=>t.pnl>0), losses = trades.filter(t=>t.pnl<0);
-    const totalPnl = trades.reduce((a,t)=>a+t.pnl,0);
+    const converted = trades.map(t=>({...t, cpnl: cp(t.pnl, t)}));
+    const wins = converted.filter(t=>t.cpnl>0), losses = converted.filter(t=>t.cpnl<0);
+    const totalPnl = converted.reduce((a,t)=>a+t.cpnl,0);
     const winRate = trades.length ? Math.round((wins.length/trades.length)*100) : 0;
-    const avgWin = wins.length ? Math.round(wins.reduce((a,t)=>a+t.pnl,0)/wins.length) : 0;
-    const avgLoss = losses.length ? Math.round(losses.reduce((a,t)=>a+t.pnl,0)/losses.length) : 0;
+    const avgWin = wins.length ? Math.round(wins.reduce((a,t)=>a+t.cpnl,0)/wins.length) : 0;
+    const avgLoss = losses.length ? Math.round(losses.reduce((a,t)=>a+t.cpnl,0)/losses.length) : 0;
     let running = 0;
-    const equity = trades.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(t=>{ running+=t.pnl; return { date:t.date.slice(5), value:running }; });
+    const equity = converted.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(t=>{ running+=t.cpnl; return { date:t.date.slice(5), value:+running.toFixed(2) }; });
     return { totalPnl, winRate, avgWin, avgLoss, wins:wins.length, losses:losses.length, equity };
-  }, [trades]);
+  }, [trades, convertPnl]);
 
   const recent = trades.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
 
@@ -387,10 +406,10 @@ function DashboardView({ trades, setActive, userName }) {
         <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Here's your trading performance overview.</p>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:12, marginBottom:20 }}>
-        <StatCard label="Total P&L" value={`${stats.totalPnl>=0?"+":""}₹${Math.abs(stats.totalPnl).toLocaleString("en-IN")}`} sub={`${trades.length} trades logged`} color={stats.totalPnl>=0?C.green:C.red} icon={stats.totalPnl>=0?TrendingUp:TrendingDown}/>
+        <StatCard label="Total P&L" value={`${stats.totalPnl>=0?"+":""}${currSym||"$"}${Math.abs(stats.totalPnl).toLocaleString()}`} sub={`${trades.length} trades logged`} color={stats.totalPnl>=0?C.green:C.red} icon={stats.totalPnl>=0?TrendingUp:TrendingDown}/>
         <StatCard label="Win Rate" value={`${stats.winRate}%`} sub={`${stats.wins}W / ${stats.losses}L`} color={stats.winRate>=50?C.green:C.red} icon={Target}/>
-        <StatCard label="Avg Win" value={`+₹${stats.avgWin.toLocaleString("en-IN")}`} sub="per winning trade" color={C.green} icon={ArrowUpRight}/>
-        <StatCard label="Avg Loss" value={`₹${Math.abs(stats.avgLoss).toLocaleString("en-IN")}`} sub="per losing trade" color={C.red} icon={ArrowDownRight}/>
+        <StatCard label="Avg Win" value={`+${currSym||"$"}${stats.avgWin.toLocaleString()}`} sub="per winning trade" color={C.green} icon={ArrowUpRight}/>
+        <StatCard label="Avg Loss" value={`${currSym||"$"}${Math.abs(stats.avgLoss).toLocaleString()}`} sub="per losing trade" color={C.red} icon={ArrowDownRight}/>
       </div>
 
       {stats.equity.length > 0 && (
@@ -402,7 +421,7 @@ function DashboardView({ trades, setActive, userName }) {
               <CartesianGrid strokeDasharray="3 3" stroke={C.textMuted} strokeOpacity={0.3}/>
               <XAxis dataKey="date" tick={{ fontSize:11, fill:C.textSec }} axisLine={false} tickLine={false}/>
               <YAxis tick={{ fontSize:11, fill:C.textSec }} axisLine={false} tickLine={false} tickFormatter={v=>`₹${v}`}/>
-              <Tooltip formatter={v=>[`₹${v.toLocaleString("en-IN")}`,"P&L"]}/>
+              <Tooltip formatter={v=>[`${currSym||"$"}${v.toLocaleString()}`,"P&L"]}/>
               <Area type="monotone" dataKey="value" stroke={C.red} strokeWidth={2} fill="url(#eg)" dot={false}/>
             </AreaChart>
           </ResponsiveContainer>
@@ -427,7 +446,7 @@ function DashboardView({ trades, setActive, userName }) {
                 <div style={{ fontSize:11, color:C.textSec }}>{t.date} · {t.strategy}</div>
               </div>
             </div>
-            <div style={{ fontSize:15, fontWeight:700, fontFamily:"monospace", color:t.pnl>=0?C.green:C.red }}>{fmt(t.pnl)}</div>
+            <div style={{ fontSize:15, fontWeight:700, fontFamily:"monospace", color:t.pnl>=0?C.green:C.red }}>{t.pnl>=0?"+":""}{currSym||"$"}{Math.abs(convertPnl?convertPnl(t.pnl,t.currency||"USD"):t.pnl).toLocaleString()}</div>
           </div>
         ))}
       </div>
@@ -591,16 +610,7 @@ function AddTradeView({ onAdd, userId }) {
                   ))}
                 </div>
               </div>
-              <div>
-                <label style={lbl}>Currency</label>
-                <div style={{ display:"flex", gap:8 }}>
-                  {CURRENCIES.map(c=>(
-                    <button key={c.code} onClick={()=>setCfd("currency",c.code)} style={{ flex:1, padding:"0.65rem", border:`1px solid ${cfdForm.currency===c.code?C.red:C.border}`, borderRadius:9, background:cfdForm.currency===c.code?C.redSoft:"transparent", color:cfdForm.currency===c.code?C.red:C.textSec, fontWeight:700, cursor:"pointer", fontSize:13, fontFamily:"inherit" }}>
-                      {c.symbol} {c.code}
-                    </button>
-                  ))}
-                </div>
-              </div>
+
             </div>
             <div style={row}>
               <div><label style={lbl}>Entry Price ({sym})</label><input type="number" style={inp} placeholder="1.2050" value={cfdForm.entry} onChange={e=>setCfd("entry",e.target.value)}/></div>
@@ -649,16 +659,7 @@ function AddTradeView({ onAdd, userId }) {
                 </div>
               </div>
             </div>
-            <div style={{ marginBottom:16 }}>
-              <label style={lbl}>Currency</label>
-              <div style={{ display:"flex", gap:8, maxWidth:320 }}>
-                {CURRENCIES.map(c=>(
-                  <button key={c.code} onClick={()=>setFo("currency",c.code)} style={{ flex:1, padding:"0.65rem", border:`1px solid ${foForm.currency===c.code?C.red:C.border}`, borderRadius:9, background:foForm.currency===c.code?C.redSoft:"transparent", color:foForm.currency===c.code?C.red:C.textSec, fontWeight:700, cursor:"pointer", fontSize:13, fontFamily:"inherit" }}>
-                    {c.symbol} {c.code}
-                  </button>
-                ))}
-              </div>
-            </div>
+
             <div style={row}>
               <div><label style={lbl}>Entry Price ({sym})</label><input type="number" style={inp} placeholder="22100" value={foForm.entry} onChange={e=>setFo("entry",e.target.value)}/></div>
               <div><label style={lbl}>Exit Price ({sym})</label><input type="number" style={inp} placeholder="22340" value={foForm.exit} onChange={e=>setFo("exit",e.target.value)}/></div>
@@ -714,7 +715,7 @@ function AddTradeView({ onAdd, userId }) {
 /* ═══════════════════════════════════════
    TRADE HISTORY
 ═══════════════════════════════════════ */
-function HistoryView({ trades, onDelete }) {
+function HistoryView({ trades, onDelete, convertPnl, currSym }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
   const filtered = useMemo(()=>trades.slice().sort((a,b)=>b.date.localeCompare(a.date)).filter(t=>{
@@ -753,7 +754,7 @@ function HistoryView({ trades, onDelete }) {
             <span style={{ fontSize:13, fontFamily:"monospace", color:C.textSec }}>₹{t.exit?.toLocaleString("en-IN")}</span>
             <span style={{ fontSize:13, color:C.textSec }}>{t.qty}</span>
             <span style={{ fontSize:12, color:C.textSec }}>{t.strategy}</span>
-            <span style={{ fontSize:14, fontWeight:700, fontFamily:"monospace", color:t.pnl>=0?C.green:C.red, textAlign:"right" }}>{fmt(t.pnl)}</span>
+            <span style={{ fontSize:14, fontWeight:700, fontFamily:"monospace", color:t.pnl>=0?C.green:C.red, textAlign:"right" }}>{t.pnl>=0?"+":""}{currSym||"$"}{Math.abs(convertPnl?convertPnl(t.pnl,t.currency||"USD"):t.pnl).toLocaleString()}</span>
             <div style={{ display:"flex", justifyContent:"center" }}>
               <button onClick={()=>onDelete(t.id)} style={{ background:"transparent", border:"none", cursor:"pointer", color:C.textSec, padding:4, borderRadius:6 }}><Trash2 size={14}/></button>
             </div>
@@ -767,26 +768,28 @@ function HistoryView({ trades, onDelete }) {
 /* ═══════════════════════════════════════
    ANALYTICS
 ═══════════════════════════════════════ */
-function AnalyticsView({ trades }) {
+function AnalyticsView({ trades, convertPnl, currSym }) {
   const stats = useMemo(()=>{
     if(!trades.length) return null;
-    const wins=trades.filter(t=>t.pnl>0), losses=trades.filter(t=>t.pnl<0);
-    const totalPnl=trades.reduce((a,t)=>a+t.pnl,0);
+    const cp = (t) => convertPnl ? convertPnl(t.pnl, t.currency||"USD") : t.pnl;
+    const converted = trades.map(t=>({...t, cpnl: cp(t)}));
+    const wins=converted.filter(t=>t.cpnl>0), losses=converted.filter(t=>t.cpnl<0);
+    const totalPnl=converted.reduce((a,t)=>a+t.cpnl,0);
     const winRate=Math.round((wins.length/trades.length)*100);
-    const avgWin=wins.length?Math.round(wins.reduce((a,t)=>a+t.pnl,0)/wins.length):0;
-    const avgLoss=losses.length?Math.round(losses.reduce((a,t)=>a+t.pnl,0)/losses.length):0;
+    const avgWin=wins.length?Math.round(wins.reduce((a,t)=>a+t.cpnl,0)/wins.length):0;
+    const avgLoss=losses.length?Math.round(losses.reduce((a,t)=>a+t.cpnl,0)/losses.length):0;
     const profitFactor=avgLoss!==0?Math.abs(+(avgWin/avgLoss).toFixed(2)):"∞";
-    const best=trades.reduce((b,t)=>t.pnl>b.pnl?t:b,trades[0]);
-    const worst=trades.reduce((w,t)=>t.pnl<w.pnl?t:w,trades[0]);
+    const best=converted.reduce((b,t)=>t.cpnl>b.cpnl?t:b,converted[0]);
+    const worst=converted.reduce((w,t)=>t.cpnl<w.cpnl?t:w,converted[0]);
     const byStrategy={};
-    trades.forEach(t=>{ if(!byStrategy[t.strategy])byStrategy[t.strategy]={pnl:0,count:0}; byStrategy[t.strategy].pnl+=t.pnl; byStrategy[t.strategy].count+=1; });
-    const stratData=Object.entries(byStrategy).map(([name,v])=>({name,pnl:v.pnl,count:v.count})).sort((a,b)=>b.pnl-a.pnl);
+    converted.forEach(t=>{ if(!byStrategy[t.strategy])byStrategy[t.strategy]={pnl:0,count:0}; byStrategy[t.strategy].pnl+=t.cpnl; byStrategy[t.strategy].count+=1; });
+    const stratData=Object.entries(byStrategy).map(([name,v])=>({name,pnl:+v.pnl.toFixed(2),count:v.count})).sort((a,b)=>b.pnl-a.pnl);
     const byMonth={};
-    trades.forEach(t=>{ const m=t.date.slice(0,7); if(!byMonth[m])byMonth[m]=0; byMonth[m]+=t.pnl; });
+    converted.forEach(t=>{ const m=t.date.slice(0,7); if(!byMonth[m])byMonth[m]=0; byMonth[m]+=t.cpnl; });
     const monthData=Object.entries(byMonth).map(([month,pnl])=>({month:month.slice(5),pnl:Math.round(pnl)}));
     const wlPie=[{name:"Wins",value:wins.length},{name:"Losses",value:losses.length}];
     return { winRate,avgWin,avgLoss,totalPnl,profitFactor,best,worst,stratData,monthData,wlPie };
-  },[trades]);
+  },[trades, convertPnl]);
 
   if(!stats) return <div style={{ padding:"2rem", color:C.textSec, fontFamily:"sans-serif" }}>Log some trades to see analytics.</div>;
 
@@ -797,7 +800,7 @@ function AnalyticsView({ trades }) {
         <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Deep insights into your trading performance.</p>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:12, marginBottom:20 }}>
-        {[{ label:"Win Rate",value:`${stats.winRate}%`,color:stats.winRate>=50?C.green:C.red },{ label:"Avg Win",value:`+₹${stats.avgWin.toLocaleString("en-IN")}`,color:C.green },{ label:"Avg Loss",value:`-₹${Math.abs(stats.avgLoss).toLocaleString("en-IN")}`,color:C.red },{ label:"Profit Factor",value:stats.profitFactor,color:C.amber }].map(m=>(
+        {[{ label:"Win Rate",value:`${stats.winRate}%`,color:stats.winRate>=50?C.green:C.red },{ label:"Avg Win",value:`+${currSym||"$"}${stats.avgWin.toLocaleString()}`,color:C.green },{ label:"Avg Loss",value:`-${currSym||"$"}${Math.abs(stats.avgLoss).toLocaleString()}`,color:C.red },{ label:"Profit Factor",value:stats.profitFactor,color:C.amber }].map(m=>(
           <div key={m.label} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:"1rem 1.2rem" }}>
             <div style={{ fontSize:11, color:C.textSec, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:8 }}>{m.label}</div>
             <div style={{ fontSize:22, fontWeight:800, fontFamily:"monospace", color:m.color }}>{m.value}</div>
@@ -811,7 +814,7 @@ function AnalyticsView({ trades }) {
             <BarChart data={stats.monthData}>
               <XAxis dataKey="month" tick={{ fontSize:11, fill:C.textSec }} axisLine={false} tickLine={false}/>
               <YAxis tick={{ fontSize:11, fill:C.textSec }} axisLine={false} tickLine={false} tickFormatter={v=>`₹${v}`}/>
-              <Tooltip formatter={v=>[`${v>=0?"+":""}₹${Math.abs(v).toLocaleString("en-IN")}`,"P&L"]}/>
+              <Tooltip formatter={v=>[`${v>=0?"+":""}${currSym||"$"}${Math.abs(v).toLocaleString()}`,"P&L"]}/>
               <Bar dataKey="pnl" radius={[4,4,0,0]}>
                 {stats.monthData.map((m,i)=><Cell key={i} fill={m.pnl>=0?C.green:C.red} opacity={0.85}/>)}
               </Bar>
@@ -847,7 +850,7 @@ function AnalyticsView({ trades }) {
             <div key={s.name} style={{ marginBottom:12 }}>
               <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5 }}>
                 <span style={{ fontSize:13, color:C.text }}>{s.name} <span style={{ color:C.textSec }}>({s.count})</span></span>
-                <span style={{ fontSize:13, fontFamily:"monospace", fontWeight:700, color:s.pnl>=0?C.green:C.red }}>{s.pnl>=0?"+":""}₹{Math.abs(s.pnl).toLocaleString("en-IN")}</span>
+                <span style={{ fontSize:13, fontFamily:"monospace", fontWeight:700, color:s.pnl>=0?C.green:C.red }}>{s.pnl>=0?"+":""}{currSym||"$"}{Math.abs(s.pnl).toLocaleString()}</span>
               </div>
               <div style={{ height:6, background:C.border, borderRadius:3, overflow:"hidden" }}>
                 <div style={{ height:"100%", width:`${pct}%`, background:s.pnl>=0?C.green:C.red, borderRadius:3, opacity:0.8 }}/>
@@ -860,11 +863,73 @@ function AnalyticsView({ trades }) {
         {[{ label:"🏆 Best Trade",trade:stats.best,color:C.green },{ label:"📉 Worst Trade",trade:stats.worst,color:C.red }].map(({label,trade,color})=>(
           <div key={label} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"1.25rem" }}>
             <div style={{ fontSize:13, color:C.textSec, marginBottom:10 }}>{label}</div>
-            <div style={{ fontSize:22, fontWeight:800, fontFamily:"monospace", color, marginBottom:8 }}>{trade.pnl>=0?"+":""}₹{Math.abs(trade.pnl).toLocaleString("en-IN")}</div>
+            <div style={{ fontSize:22, fontWeight:800, fontFamily:"monospace", color, marginBottom:8 }}>{trade.cpnl>=0?"+":""}{currSym||"$"}{Math.abs(trade.cpnl||trade.pnl).toLocaleString()}</div>
             <div style={{ fontSize:13, color:C.textSec }}>{trade.asset} · {trade.date}</div>
             <div style={{ fontSize:12, color:C.textSec, marginTop:4, fontStyle:"italic" }}>{trade.notes}</div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════
+   SETTINGS VIEW
+═══════════════════════════════════════ */
+function SettingsView({ displayCurrency, onCurrencyChange, rates, loadingRates }) {
+  const inp = { background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, padding:"0.7rem 1rem", color:C.text, fontSize:14, outline:"none", width:"100%", boxSizing:"border-box", fontFamily:"inherit" };
+  return (
+    <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1 }}>
+      <div style={{ marginBottom:"1.75rem" }}>
+        <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Settings</h1>
+        <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Customize your trading journal experience.</p>
+      </div>
+
+      <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"1.75rem", maxWidth:500 }}>
+        <div style={{ marginBottom:"1.5rem" }}>
+          <div style={{ fontSize:15, fontWeight:700, color:C.text, marginBottom:4 }}>Display Currency</div>
+          <div style={{ fontSize:13, color:C.textSec, marginBottom:16 }}>
+            All P&L, dashboard stats and analytics will be shown in this currency using live exchange rates.
+          </div>
+          <div style={{ display:"flex", gap:12 }}>
+            {CURRENCIES_LIST.map(c => (
+              <button key={c.code} onClick={()=>onCurrencyChange(c.code)} style={{
+                flex:1, padding:"1rem", borderRadius:12,
+                border:`2px solid ${displayCurrency===c.code ? C.red : C.border}`,
+                background: displayCurrency===c.code ? C.redSoft : "transparent",
+                color: displayCurrency===c.code ? C.red : C.textSec,
+                cursor:"pointer", fontFamily:"inherit", textAlign:"center",
+                transition:"all 0.2s"
+              }}>
+                <div style={{ fontSize:24, marginBottom:4 }}>{c.symbol}</div>
+                <div style={{ fontSize:13, fontWeight:700 }}>{c.code}</div>
+                <div style={{ fontSize:11 }}>{c.name}</div>
+              </button>
+            ))}
+          </div>
+          {loadingRates && <div style={{ fontSize:12, color:C.amber, marginTop:10 }}>⏳ Fetching live exchange rates...</div>}
+          {!loadingRates && Object.keys(rates).length > 0 && (
+            <div style={{ marginTop:12, padding:"0.75rem 1rem", background:C.surface, borderRadius:9, border:`1px solid ${C.border}` }}>
+              <div style={{ fontSize:12, color:C.textSec, marginBottom:6 }}>Live rates (base: {displayCurrency})</div>
+              <div style={{ display:"flex", gap:16 }}>
+                {CURRENCIES_LIST.filter(c=>c.code!==displayCurrency).map(c=>(
+                  <div key={c.code} style={{ fontSize:13, color:C.text }}>
+                    <span style={{ color:C.textSec }}>1 {displayCurrency} = </span>
+                    <span style={{ fontWeight:700, fontFamily:"monospace" }}>{rates[c.code]?.toFixed(2)} {c.code}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:"1.5rem" }}>
+          <div style={{ fontSize:15, fontWeight:700, color:C.text, marginBottom:4 }}>About</div>
+          <div style={{ fontSize:13, color:C.textSec, lineHeight:1.7 }}>
+            RedRain Traders v1.0 · Built for serious traders worldwide 🌍<br/>
+            Exchange rates updated daily via ExchangeRate-API.
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -880,6 +945,9 @@ export default function App() {
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [displayCurrency, setDisplayCurrency] = useState(() => localStorage.getItem("rr_currency") || "USD");
+  const [rates, setRates] = useState({});
+  const [loadingRates, setLoadingRates] = useState(false);
 
   // Check if user is already logged in (session persists across page refresh)
   useEffect(()=>{
@@ -896,6 +964,30 @@ export default function App() {
     });
     return ()=>subscription.unsubscribe();
   },[]);
+
+  useEffect(()=>{
+    const loadRates = async () => {
+      setLoadingRates(true);
+      const r = await fetchRates(displayCurrency);
+      setRates(r);
+      setLoadingRates(false);
+    };
+    loadRates();
+  },[displayCurrency]);
+
+  const handleCurrencyChange = (code) => {
+    setDisplayCurrency(code);
+    localStorage.setItem("rr_currency", code);
+  };
+
+  const convertPnl = (pnl, tradeCurrency) => {
+    if (!tradeCurrency || tradeCurrency === displayCurrency) return pnl;
+    if (!rates[tradeCurrency] || !rates[displayCurrency]) return pnl;
+    const inUSD = pnl / (rates[tradeCurrency] || 1);
+    return +(inUSD * (rates[displayCurrency] || 1)).toFixed(2);
+  };
+
+  const currSym = CURRENCIES_LIST.find(c=>c.code===displayCurrency)?.symbol || "$";
 
   const loadTrades = async (userId) => {
     setLoading(true);
@@ -933,7 +1025,7 @@ export default function App() {
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
         <div style={{ padding:"0.85rem 2rem", borderBottom:`1px solid ${C.border}`, background:C.surface, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div style={{ fontSize:13, color:C.textSec }}>
-            {{dashboard:"Overview",add:"New Trade",history:"All Trades",analytics:"Performance"}[tab]}
+            {{dashboard:"Overview",add:"New Trade",history:"All Trades",analytics:"Performance",settings:"Settings"}[tab]}
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
             <div style={{ width:30, height:30, borderRadius:"50%", background:C.redSoft, border:`1px solid ${C.redBorder}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color:C.red }}>
@@ -947,10 +1039,11 @@ export default function App() {
             <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:C.textSec, fontSize:14 }}>Loading your trades...</div>
           ) : (
             <>
-              {tab==="dashboard"  && <DashboardView trades={trades} setActive={setTab} userName={user.name||"Trader"}/>}
+              {tab==="dashboard"  && <DashboardView trades={trades} setActive={setTab} userName={user.name||"Trader"} convertPnl={convertPnl} currSym={currSym}/>}
               {tab==="add"        && <AddTradeView onAdd={addTrade} userId={user.id}/>}
-              {tab==="history"    && <HistoryView trades={trades} onDelete={deleteTrade}/>}
-              {tab==="analytics"  && <AnalyticsView trades={trades}/>}
+              {tab==="history"    && <HistoryView trades={trades} onDelete={deleteTrade} convertPnl={convertPnl} currSym={currSym}/>}
+              {tab==="analytics"  && <AnalyticsView trades={trades} convertPnl={convertPnl} currSym={currSym}/>}
+              {tab==="settings"   && <SettingsView displayCurrency={displayCurrency} onCurrencyChange={handleCurrencyChange} rates={rates} loadingRates={loadingRates}/>}
             </>
           )}
         </div>

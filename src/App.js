@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
@@ -7,7 +7,7 @@ import {
 import {
   TrendingUp, TrendingDown, Plus, LogOut, BarChart2, BookOpen,
   Home, Eye, EyeOff, ArrowUpRight, ArrowDownRight, Target,
-  Check, Trash2, Search, ChevronRight, Users, Shield, Zap, Menu, X, Settings, FlaskConical
+  Check, Trash2, Search, ChevronRight, Users, Shield, Zap, Menu, X, Settings, FlaskConical, PanelLeft
 } from "lucide-react";
 
 /* ─── THEME ─── */
@@ -76,14 +76,17 @@ function StatCard({ label, value, sub, color, icon: Icon }) {
    AUTH PAGE — REAL SUPABASE LOGIN
 ═══════════════════════════════════════ */
 function AuthPage({ onLogin, onBack }) {
-  const [isLogin, setIsLogin] = useState(true);
-  const [name, setName]       = useState("");
-  const [email, setEmail]     = useState("");
-  const [pass, setPass]       = useState("");
-  const [showPass, setShowPass] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
-  const [message, setMessage] = useState("");
+  const [isLogin, setIsLogin]       = useState(true);
+  const [step, setStep]             = useState("form"); // "form" | "otp"
+  const [name, setName]             = useState("");
+  const [email, setEmail]           = useState("");
+  const [pass, setPass]             = useState("");
+  const [otp, setOtp]               = useState(["","","","","",""]);
+  const [showPass, setShowPass]     = useState(false);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState("");
+  const [message, setMessage]       = useState("");
+  const otpRefs                     = Array.from({length:6}, () => React.createRef());
 
   const inp = {
     background:C.surface, border:`1px solid ${C.border}`, borderRadius:9,
@@ -92,31 +95,69 @@ function AuthPage({ onLogin, onBack }) {
   };
   const lbl = { fontSize:13, color:C.textSec, marginBottom:6, display:"block" };
 
+  const handleOtpChange = (val, idx) => {
+    const newOtp = [...otp];
+    newOtp[idx] = val.slice(-1);
+    setOtp(newOtp);
+    if (val && idx < 5) otpRefs[idx+1].current?.focus();
+  };
+
+  const handleOtpKeyDown = (e, idx) => {
+    if (e.key === "Backspace" && !otp[idx] && idx > 0) otpRefs[idx-1].current?.focus();
+    if (e.key === "Enter") handleVerifyOtp();
+  };
+
   const handleSubmit = async () => {
     setError(""); setMessage(""); setLoading(true);
     try {
       if (isLogin) {
-        // ── SIGN IN ──
         const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
         if (error) throw error;
         const displayName = data.user.user_metadata?.full_name || email.split("@")[0];
         onLogin(displayName, data.user.id);
       } else {
-        // ── SIGN UP ──
+        // SIGN UP → send OTP
         const { data, error } = await supabase.auth.signUp({
           email, password: pass,
           options: { data: { full_name: name } }
         });
         if (error) throw error;
-        if (data.user && !data.session) {
-          setMessage("✅ Check your email to confirm your account, then log in!");
-          setIsLogin(true);
-        } else if (data.session) {
-          onLogin(name || email.split("@")[0], data.user.id);
-        }
+        // Move to OTP step
+        setStep("otp");
+        setMessage("");
       }
     } catch (err) {
       setError(err.message || "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    const token = otp.join("");
+    if (token.length < 6) { setError("Please enter the full 6-digit code."); return; }
+    setError(""); setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email, token, type:"signup"
+      });
+      if (error) throw error;
+      const displayName = name || email.split("@")[0];
+      onLogin(displayName, data.user.id);
+    } catch (err) {
+      setError(err.message || "Invalid code. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setError(""); setLoading(true);
+    try {
+      await supabase.auth.resend({ type:"signup", email });
+      setMessage("✅ New code sent! Check your email.");
+    } catch (err) {
+      setError("Could not resend. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -128,66 +169,108 @@ function AuthPage({ onLogin, onBack }) {
         <div style={{ textAlign:"center", marginBottom:"2rem" }}>
           <div style={{ display:"flex", justifyContent:"center", marginBottom:"1.5rem" }}><Logo size="lg" /></div>
           <h2 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.4rem" }}>
-            {isLogin ? "Welcome back" : "Create your account"}
+            {step==="otp" ? "Check your email" : isLogin ? "Welcome back" : "Create your account"}
           </h2>
           <p style={{ color:C.textSec, fontSize:14 }}>
-            {isLogin ? "Log in to your trade journal" : "Start journaling your trades today"}
+            {step==="otp" ? `We sent a 6-digit code to ${email}` : isLogin ? "Log in to your trade journal" : "Start journaling your trades today"}
           </p>
         </div>
 
         <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"2rem" }}>
+          {error && <div style={{ background:"rgba(230,57,70,0.1)", border:`1px solid ${C.redBorder}`, borderRadius:8, padding:"0.7rem 1rem", marginBottom:16, fontSize:13, color:C.red }}>{error}</div>}
+          {message && <div style={{ background:C.greenSoft, border:"1px solid rgba(31,208,122,0.3)", borderRadius:8, padding:"0.7rem 1rem", marginBottom:16, fontSize:13, color:C.green }}>{message}</div>}
 
-          {/* ERRORS & MESSAGES */}
-          {error && (
-            <div style={{ background:"rgba(230,57,70,0.1)", border:`1px solid ${C.redBorder}`, borderRadius:8, padding:"0.7rem 1rem", marginBottom:16, fontSize:13, color:C.red }}>
-              {error}
-            </div>
-          )}
-          {message && (
-            <div style={{ background:C.greenSoft, border:"1px solid rgba(31,208,122,0.3)", borderRadius:8, padding:"0.7rem 1rem", marginBottom:16, fontSize:13, color:C.green }}>
-              {message}
-            </div>
-          )}
+          {/* ── OTP STEP ── */}
+          {step==="otp" ? (
+            <>
+              <div style={{ marginBottom:24 }}>
+                <label style={lbl}>Enter 6-digit verification code</label>
+                <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
+                  {otp.map((digit, idx) => (
+                    <input
+                      key={idx}
+                      ref={otpRefs[idx]}
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={1}
+                      value={digit}
+                      onChange={e => handleOtpChange(e.target.value, idx)}
+                      onKeyDown={e => handleOtpKeyDown(e, idx)}
+                      style={{
+                        width:48, height:56, textAlign:"center", fontSize:22, fontWeight:700,
+                        background:C.surface, border:`2px solid ${digit ? C.red : C.border}`,
+                        borderRadius:10, color:C.text, outline:"none", fontFamily:"monospace",
+                        transition:"border-color 0.2s"
+                      }}
+                    />
+                  ))}
+                </div>
+                <div style={{ textAlign:"center", marginTop:12, fontSize:12, color:C.textSec }}>
+                  Didn't receive it?{" "}
+                  <span onClick={handleResendOtp} style={{ color:C.red, cursor:"pointer", fontWeight:600 }}>
+                    Resend code
+                  </span>
+                </div>
+              </div>
 
-          {!isLogin && (
-            <div style={{ marginBottom:16 }}>
-              <label style={lbl}>Full Name</label>
-              <input style={inp} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} />
-            </div>
-          )}
-          <div style={{ marginBottom:16 }}>
-            <label style={lbl}>Email</label>
-            <input style={inp} type="email" placeholder="you@email.com" value={email} onChange={e => setEmail(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleSubmit()} />
-          </div>
-          <div style={{ marginBottom:24 }}>
-            <label style={lbl}>Password</label>
-            <div style={{ position:"relative" }}>
-              <input style={{ ...inp, paddingRight:44 }} type={showPass?"text":"password"} placeholder="min. 6 characters"
-                value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} />
-              <button onClick={() => setShowPass(v => !v)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:C.textSec }}>
-                {showPass ? <EyeOff size={16}/> : <Eye size={16}/>}
+              <button onClick={handleVerifyOtp} disabled={loading} style={{
+                width:"100%", background:loading?"#333":C.red, color:"#fff", border:"none",
+                borderRadius:9, padding:"0.8rem", fontWeight:700, cursor:loading?"not-allowed":"pointer",
+                fontSize:15, fontFamily:"inherit"
+              }}>
+                {loading ? "Verifying..." : "Verify & Enter Dashboard →"}
               </button>
-            </div>
-          </div>
 
-          <button onClick={handleSubmit} disabled={loading} style={{
-            width:"100%", background: loading ? "#333" : C.red, color:"#fff", border:"none",
-            borderRadius:9, padding:"0.8rem", fontWeight:700, cursor: loading ? "not-allowed" : "pointer",
-            fontSize:15, fontFamily:"inherit"
-          }}>
-            {loading ? "Please wait..." : isLogin ? "Login to Dashboard →" : "Create Account →"}
-          </button>
+              <div style={{ textAlign:"center", marginTop:"1.25rem" }}>
+                <span onClick={()=>{ setStep("form"); setOtp(["","","","","",""]); setError(""); }}
+                  style={{ fontSize:13, color:C.textSec, cursor:"pointer" }}>
+                  ← Back to signup
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* ── SIGNUP/LOGIN FORM ── */}
+              {!isLogin && (
+                <div style={{ marginBottom:16 }}>
+                  <label style={lbl}>Full Name</label>
+                  <input style={inp} placeholder="Your name" value={name} onChange={e=>setName(e.target.value)}/>
+                </div>
+              )}
+              <div style={{ marginBottom:16 }}>
+                <label style={lbl}>Email</label>
+                <input style={inp} type="email" placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
+              </div>
+              <div style={{ marginBottom:24 }}>
+                <label style={lbl}>Password</label>
+                <div style={{ position:"relative" }}>
+                  <input style={{ ...inp, paddingRight:44 }} type={showPass?"text":"password"} placeholder="min. 6 characters"
+                    value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
+                  <button onClick={()=>setShowPass(v=>!v)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:C.textSec }}>
+                    {showPass?<EyeOff size={16}/>:<Eye size={16}/>}
+                  </button>
+                </div>
+              </div>
 
-          <div style={{ textAlign:"center", marginTop:"1.25rem" }}>
-            <span style={{ fontSize:13, color:C.textSec }}>
-              {isLogin ? "Don't have an account? " : "Already have an account? "}
-            </span>
-            <span onClick={() => { setIsLogin(v=>!v); setError(""); setMessage(""); }}
-              style={{ fontSize:13, color:C.red, cursor:"pointer", fontWeight:600 }}>
-              {isLogin ? "Sign up free" : "Log in"}
-            </span>
-          </div>
+              <button onClick={handleSubmit} disabled={loading} style={{
+                width:"100%", background:loading?"#333":C.red, color:"#fff", border:"none",
+                borderRadius:9, padding:"0.8rem", fontWeight:700, cursor:loading?"not-allowed":"pointer",
+                fontSize:15, fontFamily:"inherit"
+              }}>
+                {loading ? "Please wait..." : isLogin ? "Login to Dashboard →" : "Create Account →"}
+              </button>
+
+              <div style={{ textAlign:"center", marginTop:"1.25rem" }}>
+                <span style={{ fontSize:13, color:C.textSec }}>
+                  {isLogin ? "Don't have an account? " : "Already have an account? "}
+                </span>
+                <span onClick={()=>{ setIsLogin(v=>!v); setError(""); setMessage(""); }}
+                  style={{ fontSize:13, color:C.red, cursor:"pointer", fontWeight:600 }}>
+                  {isLogin ? "Sign up free" : "Log in"}
+                </span>
+              </div>
+            </>
+          )}
         </div>
 
         <div style={{ textAlign:"center", marginTop:"1rem" }}>
@@ -332,7 +415,7 @@ function Sidebar({ active, setActive, onLogout, userName, isOpen, onToggle }) {
       {!isOpen && (
         <div style={{ width:52, background:C.surface, borderRight:`1px solid ${C.border}`, display:"flex", flexDirection:"column", alignItems:"center", padding:"1rem 0", gap:4, fontFamily:"sans-serif" }}>
           <button onClick={onToggle} style={{ background:"transparent", border:"none", cursor:"pointer", color:C.textSec, padding:"0.5rem", borderRadius:8, marginBottom:8 }}>
-            <Menu size={20}/>
+            <PanelLeft size={20}/>
           </button>
           {NAV.map(n => (
             <button key={n.id} onClick={()=>{ setActive(n.id); }} title={n.label} style={{ background:active===n.id?C.redSoft:"transparent", border:"none", cursor:"pointer", color:active===n.id?C.red:C.textSec, padding:"0.65rem", borderRadius:9, width:40, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -348,7 +431,7 @@ function Sidebar({ active, setActive, onLogout, userName, isOpen, onToggle }) {
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", paddingBottom:"1.25rem", borderBottom:`1px solid ${C.border}`, marginBottom:"1rem" }}>
             <Logo size="sm"/>
             <button onClick={onToggle} style={{ background:"transparent", border:"none", cursor:"pointer", color:C.textSec, padding:"0.3rem", borderRadius:6 }}>
-              <X size={16}/>
+              <PanelLeft size={16}/>
             </button>
           </div>
           <div style={{ flex:1, display:"flex", flexDirection:"column", gap:4 }}>

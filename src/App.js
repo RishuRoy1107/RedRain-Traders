@@ -7,7 +7,7 @@ import {
 import {
   TrendingUp, TrendingDown, Plus, LogOut, BarChart2, BookOpen,
   Home, Eye, EyeOff, ArrowUpRight, ArrowDownRight, Target,
-  Check, Trash2, Search, ChevronRight, Users, Shield, Zap, Menu, X, Settings
+  Check, Trash2, Search, ChevronRight, Users, Shield, Zap, Menu, X, Settings, FlaskConical
 } from "lucide-react";
 
 /* ─── THEME ─── */
@@ -319,11 +319,12 @@ function LandingPage({ onGetStarted }) {
 ═══════════════════════════════════════ */
 function Sidebar({ active, setActive, onLogout, userName, isOpen, onToggle }) {
   const NAV = [
-    { id:"dashboard", icon:Home,      label:"Dashboard"     },
-    { id:"add",       icon:Plus,      label:"Log Trade"     },
-    { id:"history",   icon:BookOpen,  label:"Trade History" },
-    { id:"analytics", icon:BarChart2, label:"Analytics"     },
-    { id:"settings",  icon:Settings,  label:"Settings"      },
+    { id:"dashboard",   icon:Home,          label:"Dashboard"     },
+    { id:"add",         icon:Plus,          label:"Log Trade"     },
+    { id:"history",     icon:BookOpen,      label:"Trade History" },
+    { id:"analytics",   icon:BarChart2,     label:"Analytics"     },
+    { id:"backtesting", icon:FlaskConical,  label:"Backtesting"   },
+    { id:"settings",    icon:Settings,      label:"Settings"      },
   ];
   return (
     <>
@@ -874,6 +875,255 @@ function AnalyticsView({ trades, convertPnl, currSym }) {
 }
 
 /* ═══════════════════════════════════════
+   BACKTESTING VIEW
+═══════════════════════════════════════ */
+function BacktestingView({ trades, convertPnl, currSym }) {
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  });
+
+  const cp = (t) => convertPnl ? convertPnl(t.pnl, t.currency||"USD") : t.pnl;
+
+  // ── CALENDAR DATA ──
+  const calendarData = useMemo(() => {
+    const [year, month] = selectedMonth.split("-").map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const days = {};
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = `${selectedMonth}-${String(d).padStart(2,"0")}`;
+      days[key] = { pnl:0, count:0 };
+    }
+    trades.forEach(t => {
+      if (t.date && t.date.startsWith(selectedMonth)) {
+        if (days[t.date]) {
+          days[t.date].pnl += cp(t);
+          days[t.date].count += 1;
+        }
+      }
+    });
+    return days;
+  }, [trades, selectedMonth, convertPnl]);
+
+  // ── STRATEGY REPORT CARD ──
+  const strategyStats = useMemo(() => {
+    const map = {};
+    trades.forEach(t => {
+      if (!t.strategy) return;
+      if (!map[t.strategy]) map[t.strategy] = { wins:0, losses:0, pnl:0, count:0 };
+      const cpnl = cp(t);
+      map[t.strategy].pnl += cpnl;
+      map[t.strategy].count += 1;
+      if (cpnl > 0) map[t.strategy].wins += 1;
+      else map[t.strategy].losses += 1;
+    });
+    return Object.entries(map).map(([name, s]) => {
+      const winRate = s.count ? Math.round((s.wins/s.count)*100) : 0;
+      const grade = winRate >= 70 ? "A+" : winRate >= 60 ? "A" : winRate >= 50 ? "B" : winRate >= 40 ? "C" : "D";
+      const gradeColor = winRate >= 70 ? C.green : winRate >= 60 ? "#4a9eff" : winRate >= 50 ? C.amber : winRate >= 40 ? "#f97316" : C.red;
+      return { name, ...s, winRate, grade, gradeColor, pnl: +s.pnl.toFixed(2) };
+    }).sort((a,b) => b.winRate - a.winRate);
+  }, [trades, convertPnl]);
+
+  // ── AUTO INSIGHTS ──
+  const insights = useMemo(() => {
+    if (!trades.length) return [];
+    const list = [];
+    const converted = trades.map(t=>({...t, cpnl: cp(t)}));
+
+    // Best direction
+    const longs = converted.filter(t=>t.type==="Long");
+    const shorts = converted.filter(t=>t.type==="Short");
+    const longWR = longs.length ? Math.round((longs.filter(t=>t.cpnl>0).length/longs.length)*100) : 0;
+    const shortWR = shorts.length ? Math.round((shorts.filter(t=>t.cpnl>0).length/shorts.length)*100) : 0;
+    if (longs.length && shorts.length) {
+      if (longWR > shortWR) list.push({ icon:"📈", text:`You win ${longWR}% on Long trades vs ${shortWR}% on Short trades`, color: C.green });
+      else list.push({ icon:"📉", text:`You win ${shortWR}% on Short trades vs ${longWR}% on Long trades`, color: C.green });
+    }
+
+    // Best strategy
+    if (strategyStats.length) {
+      const best = strategyStats[0];
+      list.push({ icon:"🏆", text:`Your best strategy is ${best.name} with ${best.winRate}% win rate`, color: C.amber });
+      if (strategyStats.length > 1) {
+        const worst = strategyStats[strategyStats.length-1];
+        list.push({ icon:"⚠️", text:`Your weakest strategy is ${worst.name} with only ${worst.winRate}% win rate`, color: C.red });
+      }
+    }
+
+    // Best day of week
+    const byDay = {0:{n:"Sunday",w:0,t:0},1:{n:"Monday",w:0,t:0},2:{n:"Tuesday",w:0,t:0},3:{n:"Wednesday",w:0,t:0},4:{n:"Thursday",w:0,t:0},5:{n:"Friday",w:0,t:0},6:{n:"Saturday",w:0,t:0}};
+    converted.forEach(t => {
+      if (!t.date) return;
+      const day = new Date(t.date).getDay();
+      byDay[day].t += 1;
+      if (t.cpnl > 0) byDay[day].w += 1;
+    });
+    const activeDays = Object.values(byDay).filter(d=>d.t>=2);
+    if (activeDays.length) {
+      const bestDay = activeDays.reduce((a,b)=>(b.w/b.t)>(a.w/a.t)?b:a);
+      const worstDay = activeDays.reduce((a,b)=>(b.w/b.t)<(a.w/a.t)?b:a);
+      list.push({ icon:"📅", text:`${bestDay.n} is your most profitable day (${Math.round(bestDay.w/bestDay.t*100)}% win rate)`, color: C.green });
+      if (bestDay.n !== worstDay.n) list.push({ icon:"😬", text:`${worstDay.n} is your worst day (${Math.round(worstDay.w/worstDay.t*100)}% win rate)`, color: C.red });
+    }
+
+    // Risk reward
+    const wins = converted.filter(t=>t.cpnl>0);
+    const losses = converted.filter(t=>t.cpnl<0);
+    if (wins.length && losses.length) {
+      const avgWin = wins.reduce((a,t)=>a+t.cpnl,0)/wins.length;
+      const avgLoss = Math.abs(losses.reduce((a,t)=>a+t.cpnl,0)/losses.length);
+      const rr = +(avgWin/avgLoss).toFixed(2);
+      const rrColor = rr >= 2 ? C.green : rr >= 1 ? C.amber : C.red;
+      list.push({ icon:"⚖️", text:`Your average winner is ${rr}x your average loser`, color: rrColor });
+    }
+
+    // Total trades insight
+    const totalPnl = converted.reduce((a,t)=>a+t.cpnl,0);
+    list.push({ icon:"💰", text:`Total P&L across ${trades.length} trades: ${totalPnl>=0?"+":""}${currSym||"$"}${Math.abs(totalPnl).toLocaleString()}`, color: totalPnl>=0?C.green:C.red });
+
+    return list;
+  }, [trades, strategyStats, convertPnl, currSym]);
+
+  // ── GET MONTHS FOR SELECTOR ──
+  const months = useMemo(() => {
+    const set = new Set(trades.map(t=>t.date?.slice(0,7)).filter(Boolean));
+    return Array.from(set).sort().reverse();
+  }, [trades]);
+
+  const [year, month] = selectedMonth.split("-").map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const firstDayOfWeek = new Date(year, month-1, 1).getDay();
+
+  const monthNames = ["","January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  return (
+    <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1 }}>
+      <div style={{ marginBottom:"1.75rem" }}>
+        <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Backtesting</h1>
+        <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Analyse your trade history. Find your patterns. Improve your edge.</p>
+      </div>
+
+      {trades.length === 0 ? (
+        <div style={{ textAlign:"center", color:C.textSec, fontSize:14, padding:"4rem" }}>
+          No trades logged yet. Start logging trades to see your backtesting insights!
+        </div>
+      ) : (
+        <>
+          {/* ── CALENDAR HEATMAP ── */}
+          <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"1.5rem", marginBottom:20 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:12 }}>
+              <div style={{ fontSize:14, fontWeight:600, color:C.text }}>📅 Calendar Heatmap</div>
+              <select style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:"0.4rem 0.75rem", color:C.text, fontSize:13, outline:"none", fontFamily:"inherit", cursor:"pointer" }}
+                value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}>
+                {months.map(m=>(
+                  <option key={m} value={m}>{monthNames[parseInt(m.split("-")[1])]} {m.split("-")[0]}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Day labels */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4, marginBottom:4 }}>
+              {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
+                <div key={d} style={{ textAlign:"center", fontSize:11, color:C.textSec, fontWeight:600 }}>{d}</div>
+              ))}
+            </div>
+
+            {/* Calendar grid */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4 }}>
+              {Array.from({length: firstDayOfWeek}).map((_,i)=>(
+                <div key={`empty-${i}`} />
+              ))}
+              {Array.from({length: daysInMonth}).map((_,i)=>{
+                const day = i+1;
+                const key = `${selectedMonth}-${String(day).padStart(2,"0")}`;
+                const data = calendarData[key];
+                const hasTrades = data && data.count > 0;
+                const isProfit = hasTrades && data.pnl >= 0;
+                return (
+                  <div key={day} title={hasTrades ? `${data.count} trade(s) | P&L: ${isProfit?"+":""}${currSym||"$"}${Math.abs(data.pnl).toLocaleString()}` : "No trades"} style={{
+                    aspectRatio:"1", borderRadius:6, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+                    background: !hasTrades ? C.surface : isProfit ? "rgba(31,208,122,0.2)" : "rgba(230,57,70,0.2)",
+                    border: `1px solid ${!hasTrades ? C.border : isProfit ? "rgba(31,208,122,0.4)" : "rgba(230,57,70,0.4)"}`,
+                    cursor: hasTrades ? "pointer" : "default"
+                  }}>
+                    <span style={{ fontSize:11, color: !hasTrades ? C.textSec : isProfit ? C.green : C.red, fontWeight:600 }}>{day}</span>
+                    {hasTrades && <span style={{ fontSize:9, color: isProfit ? C.green : C.red }}>
+                      {isProfit?"+":"-"}{currSym||"$"}{Math.abs(Math.round(data.pnl))}
+                    </span>}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Legend */}
+            <div style={{ display:"flex", gap:16, marginTop:12, justifyContent:"flex-end" }}>
+              {[["🟢","Profitable day"],["🔴","Loss day"],["⬜","No trades"]].map(([icon,label])=>(
+                <div key={label} style={{ display:"flex", alignItems:"center", gap:4, fontSize:11, color:C.textSec }}>
+                  <span>{icon}</span>{label}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── STRATEGY REPORT CARD ── */}
+          <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"1.5rem", marginBottom:20 }}>
+            <div style={{ fontSize:14, fontWeight:600, color:C.text, marginBottom:16 }}>📊 Strategy Report Card</div>
+            {strategyStats.length === 0 ? (
+              <div style={{ color:C.textSec, fontSize:13 }}>No strategy data yet.</div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+                {strategyStats.map(s => {
+                  const maxPnl = Math.max(...strategyStats.map(x=>Math.abs(x.pnl)));
+                  const barPct = maxPnl > 0 ? Math.round((Math.abs(s.pnl)/maxPnl)*100) : 0;
+                  return (
+                    <div key={s.name} style={{ background:C.cardHover, borderRadius:10, padding:"1rem 1.2rem", border:`1px solid ${C.border}` }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                          <div style={{ width:36, height:36, borderRadius:8, background:`${s.gradeColor}20`, border:`1px solid ${s.gradeColor}40`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                            <span style={{ fontSize:14, fontWeight:800, color:s.gradeColor }}>{s.grade}</span>
+                          </div>
+                          <div>
+                            <div style={{ fontSize:14, fontWeight:600, color:C.text }}>{s.name}</div>
+                            <div style={{ fontSize:11, color:C.textSec }}>{s.count} trades · {s.wins}W / {s.losses}L</div>
+                          </div>
+                        </div>
+                        <div style={{ textAlign:"right" }}>
+                          <div style={{ fontSize:15, fontWeight:700, fontFamily:"monospace", color:s.pnl>=0?C.green:C.red }}>
+                            {s.pnl>=0?"+":""}{currSym||"$"}{Math.abs(s.pnl).toLocaleString()}
+                          </div>
+                          <div style={{ fontSize:12, color:C.textSec }}>{s.winRate}% win rate</div>
+                        </div>
+                      </div>
+                      <div style={{ height:5, background:C.border, borderRadius:3, overflow:"hidden" }}>
+                        <div style={{ height:"100%", width:`${barPct}%`, background:s.pnl>=0?C.green:C.red, borderRadius:3, opacity:0.8 }}/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── AUTO INSIGHTS ── */}
+          <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"1.5rem" }}>
+            <div style={{ fontSize:14, fontWeight:600, color:C.text, marginBottom:16 }}>🔍 Auto Insights</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              {insights.map((ins, i) => (
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:12, padding:"0.85rem 1rem", background:C.cardHover, borderRadius:10, border:`1px solid ${C.border}` }}>
+                  <span style={{ fontSize:20 }}>{ins.icon}</span>
+                  <span style={{ fontSize:14, color:ins.color, fontWeight:500 }}>{ins.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════
    SETTINGS VIEW
 ═══════════════════════════════════════ */
 function SettingsView({ displayCurrency, onCurrencyChange, rates, loadingRates }) {
@@ -1025,7 +1275,7 @@ export default function App() {
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
         <div style={{ padding:"0.85rem 2rem", borderBottom:`1px solid ${C.border}`, background:C.surface, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div style={{ fontSize:13, color:C.textSec }}>
-            {{dashboard:"Overview",add:"New Trade",history:"All Trades",analytics:"Performance",settings:"Settings"}[tab]}
+            {{dashboard:"Overview",add:"New Trade",history:"All Trades",analytics:"Performance",backtesting:"Backtesting",settings:"Settings"}[tab]}
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
             <div style={{ width:30, height:30, borderRadius:"50%", background:C.redSoft, border:`1px solid ${C.redBorder}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color:C.red }}>
@@ -1039,11 +1289,12 @@ export default function App() {
             <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:C.textSec, fontSize:14 }}>Loading your trades...</div>
           ) : (
             <>
-              {tab==="dashboard"  && <DashboardView trades={trades} setActive={setTab} userName={user.name||"Trader"} convertPnl={convertPnl} currSym={currSym}/>}
-              {tab==="add"        && <AddTradeView onAdd={addTrade} userId={user.id}/>}
-              {tab==="history"    && <HistoryView trades={trades} onDelete={deleteTrade} convertPnl={convertPnl} currSym={currSym}/>}
-              {tab==="analytics"  && <AnalyticsView trades={trades} convertPnl={convertPnl} currSym={currSym}/>}
-              {tab==="settings"   && <SettingsView displayCurrency={displayCurrency} onCurrencyChange={handleCurrencyChange} rates={rates} loadingRates={loadingRates}/>}
+              {tab==="dashboard"    && <DashboardView trades={trades} setActive={setTab} userName={user.name||"Trader"} convertPnl={convertPnl} currSym={currSym}/>}
+              {tab==="add"          && <AddTradeView onAdd={addTrade} userId={user.id}/>}
+              {tab==="history"      && <HistoryView trades={trades} onDelete={deleteTrade} convertPnl={convertPnl} currSym={currSym}/>}
+              {tab==="analytics"    && <AnalyticsView trades={trades} convertPnl={convertPnl} currSym={currSym}/>}
+              {tab==="backtesting"  && <BacktestingView trades={trades} convertPnl={convertPnl} currSym={currSym}/>}
+              {tab==="settings"     && <SettingsView displayCurrency={displayCurrency} onCurrencyChange={handleCurrencyChange} rates={rates} loadingRates={loadingRates}/>}
             </>
           )}
         </div>

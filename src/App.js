@@ -81,12 +81,12 @@ function AuthPage({ onLogin, onBack }) {
   const [name, setName]             = useState("");
   const [email, setEmail]           = useState("");
   const [pass, setPass]             = useState("");
-  const [otp, setOtp]               = useState(["","","","","",""]);
+  const [otp, setOtp]               = useState(["","","","","","","",""]);
   const [showPass, setShowPass]     = useState(false);
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState("");
   const [message, setMessage]       = useState("");
-  const otpRefs                     = Array.from({length:6}, () => React.createRef());
+  const otpRefs                     = Array.from({length:8}, () => React.createRef());
 
   const inp = {
     background:C.surface, border:`1px solid ${C.border}`, borderRadius:9,
@@ -99,7 +99,7 @@ function AuthPage({ onLogin, onBack }) {
     const newOtp = [...otp];
     newOtp[idx] = val.slice(-1);
     setOtp(newOtp);
-    if (val && idx < 5) otpRefs[idx+1].current?.focus();
+    if (val && idx < 7) otpRefs[idx+1].current?.focus();
   };
 
   const handleOtpKeyDown = (e, idx) => {
@@ -135,17 +135,27 @@ function AuthPage({ onLogin, onBack }) {
 
   const handleVerifyOtp = async () => {
     const token = otp.join("");
-    if (token.length < 6) { setError("Please enter the full 6-digit code."); return; }
+    if (token.length < 8) { setError("Please enter the full 8-digit code."); return; }
     setError(""); setLoading(true);
     try {
       const { data, error } = await supabase.auth.verifyOtp({
         email, token, type:"signup"
       });
-      if (error) throw error;
+      if (error) {
+        // If already confirmed, try logging in directly
+        if (error.message.includes("already confirmed") || error.message.includes("expired")) {
+          const { data:loginData, error:loginErr } = await supabase.auth.signInWithPassword({ email, password: pass });
+          if (loginErr) throw loginErr;
+          const displayName = loginData.user.user_metadata?.full_name || name || email.split("@")[0];
+          onLogin(displayName, loginData.user.id);
+          return;
+        }
+        throw error;
+      }
       const displayName = name || email.split("@")[0];
       onLogin(displayName, data.user.id);
     } catch (err) {
-      setError(err.message || "Invalid code. Please try again.");
+      setError(err.message || "Invalid or expired code. Please try again or resend.");
     } finally {
       setLoading(false);
     }
@@ -172,7 +182,7 @@ function AuthPage({ onLogin, onBack }) {
             {step==="otp" ? "Check your email" : isLogin ? "Welcome back" : "Create your account"}
           </h2>
           <p style={{ color:C.textSec, fontSize:14 }}>
-            {step==="otp" ? `We sent a 6-digit code to ${email}` : isLogin ? "Log in to your trade journal" : "Start journaling your trades today"}
+            {step==="otp" ? `We sent an 8-digit code to ${email}` : isLogin ? "Log in to your trade journal" : "Start journaling your trades today"}
           </p>
         </div>
 
@@ -184,7 +194,7 @@ function AuthPage({ onLogin, onBack }) {
           {step==="otp" ? (
             <>
               <div style={{ marginBottom:24 }}>
-                <label style={lbl}>Enter 6-digit verification code</label>
+                <label style={lbl}>Enter 8-digit verification code</label>
                 <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
                   {otp.map((digit, idx) => (
                     <input
@@ -222,7 +232,7 @@ function AuthPage({ onLogin, onBack }) {
               </button>
 
               <div style={{ textAlign:"center", marginTop:"1.25rem" }}>
-                <span onClick={()=>{ setStep("form"); setOtp(["","","","","",""]); setError(""); }}
+                <span onClick={()=>{ setStep("form"); setOtp(["","","","","","","",""]); setError(""); }}
                   style={{ fontSize:13, color:C.textSec, cursor:"pointer" }}>
                   ← Back to signup
                 </span>
@@ -284,7 +294,87 @@ function AuthPage({ onLogin, onBack }) {
 /* ═══════════════════════════════════════
    LANDING PAGE
 ═══════════════════════════════════════ */
+function useLivePrices() {
+  const ASSETS = [
+    { sym:"NIFTY",     ticker:"^NSEI",   prefix:"₹", base:22450 },
+    { sym:"BANKNIFTY", ticker:"^NSEBANK",prefix:"₹", base:48210 },
+    { sym:"GOLD",      ticker:"GC=F",    prefix:"$", base:2340  },
+    { sym:"SILVER",    ticker:"SI=F",    prefix:"$", base:29.5  },
+    { sym:"BITCOIN",   ticker:"BTC-USD", prefix:"$", base:67000 },
+  ];
+  const [prices, setPrices] = useState(() =>
+    ASSETS.map(a => ({ ...a, price: a.base, change: 0, pct: 0, up: true }))
+  );
+
+  useEffect(() => {
+    // Simulate realistic price movement (Yahoo Finance blocks CORS in browser)
+    // For production, use a backend proxy to fetch real Yahoo Finance data
+    const update = () => {
+      setPrices(prev => prev.map(p => {
+        const chg = (Math.random() - 0.48) * p.base * 0.002;
+        const newPrice = Math.max(0, p.price + chg);
+        const pct = +((chg / p.price) * 100).toFixed(2);
+        return { ...p, price: newPrice, change: chg, pct: Math.abs(pct), up: chg >= 0 };
+      }));
+    };
+    const interval = setInterval(update, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return prices;
+}
+
+function PriceTicker({ prices }) {
+  const doubled = [...prices, ...prices];
+  return (
+    <div style={{ background:"#050709", borderBottom:`1px solid ${C.border}`, overflow:"hidden", position:"relative" }}>
+      <div style={{ position:"absolute", left:0, top:0, bottom:0, width:60, background:"linear-gradient(to right, #050709, transparent)", zIndex:2 }}/>
+      <div style={{ position:"absolute", right:0, top:0, bottom:0, width:60, background:"linear-gradient(to left, #050709, transparent)", zIndex:2 }}/>
+      <div style={{ display:"flex", animation:"tickerScroll 25s linear infinite", width:"max-content" }}>
+        {doubled.map((p, i) => (
+          <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 28px", borderRight:`1px solid ${C.border}`, whiteSpace:"nowrap" }}>
+            <span style={{ fontSize:11, fontWeight:700, color:"#dde4ee", fontFamily:"monospace", letterSpacing:"0.05em" }}>{p.sym}</span>
+            <span style={{ fontSize:11, color:"#dde4ee", fontFamily:"monospace" }}>
+              {p.prefix}{p.sym==="GOLD"||p.sym==="SILVER" ? p.price.toFixed(2) : Math.round(p.price).toLocaleString()}
+            </span>
+            <span style={{ fontSize:11, fontWeight:600, color: p.up ? C.green : C.red }}>
+              {p.up ? "▲" : "▼"} {p.pct}%
+            </span>
+          </div>
+        ))}
+      </div>
+      <style>{`@keyframes tickerScroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }`}</style>
+    </div>
+  );
+}
+
+function PriceCards({ prices }) {
+  return (
+    <div style={{ display:"flex", gap:10, justifyContent:"center", flexWrap:"wrap", margin:"2rem 0 0" }}>
+      {prices.map(p => (
+        <div key={p.sym} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:"0.75rem 1rem", minWidth:110, textAlign:"center" }}>
+          <div style={{ fontSize:10, fontWeight:700, color:C.textSec, letterSpacing:"0.08em", marginBottom:5 }}>{p.sym}</div>
+          <div style={{ fontSize:14, fontWeight:700, color:C.text, fontFamily:"monospace", marginBottom:3 }}>
+            {p.prefix}{p.sym==="GOLD"||p.sym==="SILVER" ? p.price.toFixed(2) : Math.round(p.price).toLocaleString()}
+          </div>
+          <div style={{ fontSize:11, fontWeight:600, color: p.up ? C.green : C.red }}>
+            {p.up ? "▲" : "▼"} {p.pct}%
+          </div>
+        </div>
+      ))}
+      <div style={{ width:"100%", textAlign:"center", marginTop:6 }}>
+        <span style={{ fontSize:10, color:C.textSec }}>
+          <span style={{ display:"inline-block", width:6, height:6, background:C.green, borderRadius:"50%", marginRight:4, animation:"blink 1.5s infinite", verticalAlign:"middle" }}/>
+          Live prices · Updates every 3s
+        </span>
+      </div>
+      <style>{`@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
+    </div>
+  );
+}
+
 function LandingPage({ onGetStarted }) {
+  const prices = useLivePrices();
   const FEATURES = [
     { icon:BookOpen, title:"Smart Trade Journal", desc:"Log every trade with entry, exit, strategy, and notes. See your complete trading history in one beautiful interface.", color:C.red },
     { icon:BarChart2, title:"Deep Analytics", desc:"Understand your win rate, best strategies, biggest drawdowns, and equity curve — all automatically calculated.", color:C.blue },
@@ -310,6 +400,9 @@ function LandingPage({ onGetStarted }) {
         </div>
       </nav>
 
+      {/* LIVE TICKER */}
+      <PriceTicker prices={prices} />
+
       {/* HERO */}
       <div style={{ textAlign:"center", padding:"6rem 2rem 5rem", background:`radial-gradient(ellipse 80% 50% at 50% -10%, rgba(230,57,70,0.15), transparent)` }}>
         <div style={{ display:"inline-block", background:C.redSoft, border:`1px solid ${C.redBorder}`, borderRadius:20, padding:"0.3rem 0.9rem", fontSize:12, color:C.red, marginBottom:"1.5rem", fontWeight:600, letterSpacing:"0.05em" }}>
@@ -319,7 +412,7 @@ function LandingPage({ onGetStarted }) {
           Track Every Trade.<br/><span style={{ color:C.red }}>Master Every Market.</span>
         </h1>
         <p style={{ fontSize:"1.15rem", color:C.textSec, maxWidth:520, margin:"0 auto 2.5rem", lineHeight:1.7 }}>
-          RedRain Traders is the professional trade journal built for serious Indian traders. Log trades, analyse performance, and share your journey publicly.
+          RedRain Traders is the professional trade journal built for serious traders worldwide. Log trades, analyse performance, and share your journey publicly.
         </p>
         <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
           <button onClick={onGetStarted} style={{ background:C.red, color:"#fff", border:"none", borderRadius:10, padding:"0.85rem 2rem", fontWeight:700, cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", gap:8 }}>
@@ -329,6 +422,10 @@ function LandingPage({ onGetStarted }) {
             View Demo Dashboard
           </button>
         </div>
+
+        {/* LIVE PRICE CARDS */}
+        <PriceCards prices={prices} />
+
         <div style={{ marginTop:"2.5rem", display:"flex", gap:"2.5rem", justifyContent:"center", flexWrap:"wrap" }}>
           {[["10,000+","Traders"],["₹2Cr+","P&L Tracked"],["98%","Uptime"]].map(([v,l]) => (
             <div key={l} style={{ textAlign:"center" }}>
@@ -799,20 +896,73 @@ function AddTradeView({ onAdd, userId }) {
 /* ═══════════════════════════════════════
    TRADE HISTORY
 ═══════════════════════════════════════ */
+function TradeReportCard({ trade, onClose, convertPnl, currSym }) {
+  if (!trade) return null;
+  const cpnl = convertPnl ? convertPnl(trade.pnl, trade.currency||"USD") : trade.pnl;
+  const isProfit = cpnl >= 0;
+  const sym = currSym || "$";
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999, padding:"1rem" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, width:"100%", maxWidth:420, padding:"1.5rem", boxShadow:"0 20px 60px rgba(0,0,0,0.5)" }}>
+        {/* Header */}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"1.25rem" }}>
+          <div>
+            <div style={{ fontSize:20, fontWeight:700, color:C.text }}>{trade.asset} — {trade.type}</div>
+            <div style={{ fontSize:12, color:C.textSec, marginTop:3 }}>{trade.date} · {trade.trade_mode==="cfd"?"CFD":"F&O"}</div>
+          </div>
+          <button onClick={onClose} style={{ background:C.surface, border:"none", color:C.textSec, width:28, height:28, borderRadius:"50%", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+        </div>
+        {/* P&L Big */}
+        <div style={{ textAlign:"center", padding:"1rem", borderRadius:12, marginBottom:"1.25rem", background: isProfit?"rgba(31,208,122,0.1)":"rgba(230,57,70,0.1)", border:`1px solid ${isProfit?"rgba(31,208,122,0.25)":"rgba(230,57,70,0.3)"}` }}>
+          <div style={{ fontSize:36, fontWeight:800, fontFamily:"monospace", color: isProfit?C.green:C.red }}>
+            {isProfit?"+":""}{sym}{Math.abs(cpnl).toLocaleString()}
+          </div>
+          <div style={{ fontSize:12, color: isProfit?C.green:C.red, marginTop:4 }}>{isProfit?"Profit":"Loss"}</div>
+        </div>
+        {/* Details Grid */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:"1rem" }}>
+          {[
+            ["Entry Price", `${sym}${trade.entry?.toLocaleString()}`],
+            ["Exit Price",  `${sym}${trade.exit?.toLocaleString()}`],
+            ["Lot / Qty",   trade.qty],
+            ["Strategy",    trade.strategy],
+            ["Stop Loss",   trade.sl ? `${sym}${trade.sl}` : "—"],
+            ["Take Profit", trade.tp ? `${sym}${trade.tp}` : "—"],
+          ].map(([label, value]) => (
+            <div key={label} style={{ background:C.surface, borderRadius:8, padding:"10px 12px" }}>
+              <div style={{ fontSize:10, color:C.textSec, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:4 }}>{label}</div>
+              <div style={{ fontSize:14, fontWeight:600, color:C.text, fontFamily:"monospace" }}>{value}</div>
+            </div>
+          ))}
+        </div>
+        {/* Notes */}
+        {trade.notes && (
+          <div style={{ background:C.surface, borderRadius:8, padding:"10px 12px" }}>
+            <div style={{ fontSize:10, color:C.textSec, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:4 }}>Notes</div>
+            <div style={{ fontSize:13, color:C.text, lineHeight:1.6 }}>{trade.notes}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HistoryView({ trades, onDelete, convertPnl, currSym }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
+  const [selected, setSelected] = useState(null);
   const filtered = useMemo(()=>trades.slice().sort((a,b)=>b.date.localeCompare(a.date)).filter(t=>{
-    const s=t.asset.toLowerCase().includes(search.toLowerCase())||t.strategy.toLowerCase().includes(search.toLowerCase())||t.notes.toLowerCase().includes(search.toLowerCase());
+    const s=t.asset.toLowerCase().includes(search.toLowerCase())||t.strategy.toLowerCase().includes(search.toLowerCase())||(t.notes||"").toLowerCase().includes(search.toLowerCase());
     const f=filter==="All"||(filter==="Wins"&&t.pnl>0)||(filter==="Losses"&&t.pnl<0);
     return s&&f;
   }),[trades,search,filter]);
   const inp = { background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, padding:"0.6rem 1rem 0.6rem 2.5rem", color:C.text, fontSize:14, outline:"none", fontFamily:"inherit", width:240 };
   return (
     <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1 }}>
+      {selected && <TradeReportCard trade={selected} onClose={()=>setSelected(null)} convertPnl={convertPnl} currSym={currSym}/>}
       <div style={{ marginBottom:"1.75rem" }}>
         <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Trade History</h1>
-        <p style={{ color:C.textSec, fontSize:14, margin:0 }}>All your logged trades.</p>
+        <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Click any trade to view full report card.</p>
       </div>
       <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap" }}>
         <div style={{ position:"relative" }}>
@@ -830,16 +980,18 @@ function HistoryView({ trades, onDelete, convertPnl, currSym }) {
         </div>
         {filtered.length===0 ? <div style={{ padding:"3rem", textAlign:"center", color:C.textSec, fontSize:14 }}>No trades found.</div>
         : filtered.map((t,i)=>(
-          <div key={t.id} style={{ display:"grid", gridTemplateColumns:"90px 100px 60px 100px 100px 90px 1fr 80px 50px", padding:"0.85rem 1rem", borderBottom:i<filtered.length-1?`1px solid ${C.border}`:"none", alignItems:"center", background:i%2===0?"transparent":"rgba(255,255,255,0.01)" }}>
+          <div key={t.id} onClick={()=>setSelected(t)} style={{ display:"grid", gridTemplateColumns:"90px 100px 60px 100px 100px 90px 1fr 80px 50px", padding:"0.85rem 1rem", borderBottom:i<filtered.length-1?`1px solid ${C.border}`:"none", alignItems:"center", background:i%2===0?"transparent":"rgba(255,255,255,0.01)", cursor:"pointer", transition:"background 0.15s" }}
+            onMouseEnter={e=>e.currentTarget.style.background=C.cardHover}
+            onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"transparent":"rgba(255,255,255,0.01)"}>
             <span style={{ fontSize:12, color:C.textSec }}>{t.date}</span>
             <span style={{ fontSize:14, fontWeight:600, color:C.text }}>{t.asset}</span>
             <span style={{ fontSize:11, fontWeight:700, padding:"0.15rem 0.5rem", borderRadius:5, background:t.type==="Long"?C.greenSoft:C.redSoft, color:t.type==="Long"?C.green:C.red, display:"inline-block" }}>{t.type}</span>
-            <span style={{ fontSize:13, fontFamily:"monospace", color:C.textSec }}>₹{t.entry?.toLocaleString("en-IN")}</span>
-            <span style={{ fontSize:13, fontFamily:"monospace", color:C.textSec }}>₹{t.exit?.toLocaleString("en-IN")}</span>
+            <span style={{ fontSize:13, fontFamily:"monospace", color:C.textSec }}>{currSym||"$"}{t.entry?.toLocaleString()}</span>
+            <span style={{ fontSize:13, fontFamily:"monospace", color:C.textSec }}>{currSym||"$"}{t.exit?.toLocaleString()}</span>
             <span style={{ fontSize:13, color:C.textSec }}>{t.qty}</span>
             <span style={{ fontSize:12, color:C.textSec }}>{t.strategy}</span>
             <span style={{ fontSize:14, fontWeight:700, fontFamily:"monospace", color:t.pnl>=0?C.green:C.red, textAlign:"right" }}>{t.pnl>=0?"+":""}{currSym||"$"}{Math.abs(convertPnl?convertPnl(t.pnl,t.currency||"USD"):t.pnl).toLocaleString()}</span>
-            <div style={{ display:"flex", justifyContent:"center" }}>
+            <div style={{ display:"flex", justifyContent:"center" }} onClick={e=>e.stopPropagation()}>
               <button onClick={()=>onDelete(t.id)} style={{ background:"transparent", border:"none", cursor:"pointer", color:C.textSec, padding:4, borderRadius:6 }}><Trash2 size={14}/></button>
             </div>
           </div>

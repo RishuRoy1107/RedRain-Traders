@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
@@ -81,7 +81,7 @@ function AuthPage({ onLogin, onBack }) {
   const [name, setName]             = useState("");
   const [email, setEmail]           = useState("");
   const [pass, setPass]             = useState("");
-  const [otp, setOtp]               = useState(["","","","",""]);
+  const [otp, setOtp]               = useState(["","","","","",""]);
   const [showPass, setShowPass]     = useState(false);
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState("");
@@ -400,33 +400,51 @@ function PriceTicker({ prices }) {
   );
 }
 
-function PriceCards({ prices }) {
+function TradingViewMarket() {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!ref.current || ref.current.querySelector("script")) return;
+    const script = document.createElement("script");
+    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-market-overview.js";
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      colorTheme: "dark",
+      dateRange: "1D",
+      showChart: false,
+      locale: "en",
+      isTransparent: true,
+      showSymbolLogo: true,
+      showFloatingTooltip: false,
+      width: "100%",
+      height: 200,
+      tabs: [
+        {
+          title: "Markets",
+          symbols: [
+            { s:"OANDA:XAUUSD",   d:"Gold"       },
+            { s:"OANDA:XAGUSD",   d:"Silver"     },
+            { s:"COINBASE:BTCUSD",d:"Bitcoin"    },
+            { s:"NSE:NIFTY50",    d:"Nifty 50"   },
+            { s:"NSE:BANKNIFTY",  d:"Bank Nifty" },
+            { s:"OANDA:EURUSD",   d:"EUR/USD"    },
+          ]
+        }
+      ]
+    });
+    ref.current.appendChild(script);
+  }, []);
   return (
-    <div style={{ display:"flex", gap:10, justifyContent:"center", flexWrap:"wrap", margin:"2rem 0 0" }}>
-      {prices.map(p => (
-        <div key={p.sym} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:"0.75rem 1rem", minWidth:110, textAlign:"center" }}>
-          <div style={{ fontSize:10, fontWeight:700, color:C.textSec, letterSpacing:"0.08em", marginBottom:5 }}>{p.sym}</div>
-          <div style={{ fontSize:14, fontWeight:700, color:C.text, fontFamily:"monospace", marginBottom:3 }}>
-            {p.prefix}{p.decimals ? p.price.toFixed(p.decimals) : Math.round(p.price).toLocaleString()}
-          </div>
-          <div style={{ fontSize:11, fontWeight:600, color: p.up ? C.green : C.red }}>
-            {p.up ? "▲" : "▼"} {p.pct}%
-          </div>
-        </div>
-      ))}
-      <div style={{ width:"100%", textAlign:"center", marginTop:6 }}>
-        <span style={{ fontSize:10, color:C.textSec }}>
-          <span style={{ display:"inline-block", width:6, height:6, background:C.green, borderRadius:"50%", marginRight:4, animation:"blink 1.5s infinite", verticalAlign:"middle" }}/>
-          Live prices · Updates every 3s
-        </span>
-      </div>
-      <style>{`@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
+    <div ref={ref} className="tradingview-widget-container" style={{ margin:"2rem auto 0", maxWidth:700 }}>
+      <div className="tradingview-widget-container__widget"></div>
     </div>
   );
 }
 
+function PriceCards({ prices }) {
+  return <TradingViewMarket />;
+}
+
 function LandingPage({ onGetStarted }) {
-  const prices = useLivePrices();
   const FEATURES = [
     { icon:BookOpen, title:"Smart Trade Journal", desc:"Log every trade with entry, exit, strategy, and notes. See your complete trading history in one beautiful interface.", color:C.red },
     { icon:BarChart2, title:"Deep Analytics", desc:"Understand your win rate, best strategies, biggest drawdowns, and equity curve — all automatically calculated.", color:C.blue },
@@ -453,7 +471,7 @@ function LandingPage({ onGetStarted }) {
       </nav>
 
       {/* LIVE TICKER */}
-      <PriceTicker prices={prices} />
+      <PriceTicker />
 
       {/* HERO */}
       <div style={{ textAlign:"center", padding:"6rem 2rem 5rem", background:`radial-gradient(ellipse 80% 50% at 50% -10%, rgba(230,57,70,0.15), transparent)` }}>
@@ -476,7 +494,7 @@ function LandingPage({ onGetStarted }) {
         </div>
 
         {/* LIVE PRICE CARDS */}
-        <PriceCards prices={prices} />
+        <PriceCards />
 
         <div style={{ marginTop:"2.5rem", display:"flex", gap:"2.5rem", justifyContent:"center", flexWrap:"wrap" }}>
           {[["10,000+","Traders"],["₹2Cr+","P&L Tracked"],["98%","Uptime"]].map(([v,l]) => (
@@ -637,6 +655,9 @@ function DashboardView({ trades, setActive, userName, convertPnl, currSym }) {
       <div style={{ marginBottom:"1.75rem" }}>
         <h1 style={{ fontSize:"1.6rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Good day, {userName} 👋</h1>
         <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Here's your trading performance overview.</p>
+      </div>
+      <div style={{ marginBottom:20, borderRadius:12, overflow:"hidden", border:`1px solid ${C.border}` }}>
+        <TradingViewTicker />
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:12, marginBottom:20 }}>
         <StatCard label="Total P&L" value={`${stats.totalPnl>=0?"+":""}${currSym||"$"}${Math.abs(stats.totalPnl).toLocaleString()}`} sub={`${trades.length} trades logged`} color={stats.totalPnl>=0?C.green:C.red} icon={stats.totalPnl>=0?TrendingUp:TrendingDown}/>

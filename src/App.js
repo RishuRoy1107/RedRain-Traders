@@ -77,16 +77,16 @@ function StatCard({ label, value, sub, color, icon: Icon }) {
 ═══════════════════════════════════════ */
 function AuthPage({ onLogin, onBack }) {
   const [isLogin, setIsLogin]       = useState(true);
-  const [step, setStep]             = useState("form"); // "form" | "otp"
+  const [step, setStep]             = useState("form"); // "form" | "otp" | "forgot" | "forgot-sent"
   const [name, setName]             = useState("");
   const [email, setEmail]           = useState("");
   const [pass, setPass]             = useState("");
-  const [otp, setOtp]               = useState(["","","","","","","",""]);
+  const [otp, setOtp]               = useState(["","","","",""]);
   const [showPass, setShowPass]     = useState(false);
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState("");
   const [message, setMessage]       = useState("");
-  const otpRefs                     = Array.from({length:8}, () => React.createRef());
+  const otpRefs                     = Array.from({length:6}, () => React.createRef());
 
   const inp = {
     background:C.surface, border:`1px solid ${C.border}`, borderRadius:9,
@@ -99,7 +99,7 @@ function AuthPage({ onLogin, onBack }) {
     const newOtp = [...otp];
     newOtp[idx] = val.slice(-1);
     setOtp(newOtp);
-    if (val && idx < 7) otpRefs[idx+1].current?.focus();
+    if (val && idx < 5) otpRefs[idx+1].current?.focus();
   };
 
   const handleOtpKeyDown = (e, idx) => {
@@ -135,7 +135,7 @@ function AuthPage({ onLogin, onBack }) {
 
   const handleVerifyOtp = async () => {
     const token = otp.join("");
-    if (token.length < 8) { setError("Please enter the full 8-digit code."); return; }
+    if (token.length < 6) { setError("Please enter the full 6-digit code."); return; }
     setError(""); setLoading(true);
     try {
       const { data, error } = await supabase.auth.verifyOtp({
@@ -173,16 +173,32 @@ function AuthPage({ onLogin, onBack }) {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!email) { setError("Please enter your email address first."); return; }
+    setError(""); setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin
+      });
+      if (error) throw error;
+      setStep("forgot-sent");
+    } catch (err) {
+      setError(err.message || "Could not send reset email. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"sans-serif", padding:"2rem" }}>
       <div style={{ width:"100%", maxWidth:400 }}>
         <div style={{ textAlign:"center", marginBottom:"2rem" }}>
           <div style={{ display:"flex", justifyContent:"center", marginBottom:"1.5rem" }}><Logo size="lg" /></div>
           <h2 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.4rem" }}>
-            {step==="otp" ? "Check your email" : isLogin ? "Welcome back" : "Create your account"}
+            {step==="otp" ? "Check your email" : step==="forgot" ? "Reset your password" : step==="forgot-sent" ? "Email sent!" : isLogin ? "Welcome back" : "Create your account"}
           </h2>
           <p style={{ color:C.textSec, fontSize:14 }}>
-            {step==="otp" ? `We sent an 8-digit code to ${email}` : isLogin ? "Log in to your trade journal" : "Start journaling your trades today"}
+            {step==="otp" ? `We sent a 6-digit code to ${email}` : step==="forgot" ? "Enter your email to receive a reset link" : step==="forgot-sent" ? `Check ${email} for the reset link` : isLogin ? "Log in to your trade journal" : "Start journaling your trades today"}
           </p>
         </div>
 
@@ -194,7 +210,7 @@ function AuthPage({ onLogin, onBack }) {
           {step==="otp" ? (
             <>
               <div style={{ marginBottom:24 }}>
-                <label style={lbl}>Enter 8-digit verification code</label>
+                <label style={lbl}>Enter 6-digit verification code</label>
                 <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
                   {otp.map((digit, idx) => (
                     <input
@@ -207,7 +223,7 @@ function AuthPage({ onLogin, onBack }) {
                       onChange={e => handleOtpChange(e.target.value, idx)}
                       onKeyDown={e => handleOtpKeyDown(e, idx)}
                       style={{
-                        width:48, height:56, textAlign:"center", fontSize:22, fontWeight:700,
+                        width:52, height:58, textAlign:"center", fontSize:24, fontWeight:700,
                         background:C.surface, border:`2px solid ${digit ? C.red : C.border}`,
                         borderRadius:10, color:C.text, outline:"none", fontFamily:"monospace",
                         transition:"border-color 0.2s"
@@ -232,11 +248,40 @@ function AuthPage({ onLogin, onBack }) {
               </button>
 
               <div style={{ textAlign:"center", marginTop:"1.25rem" }}>
-                <span onClick={()=>{ setStep("form"); setOtp(["","","","","","","",""]); setError(""); }}
+                <span onClick={()=>{ setStep("form"); setOtp(["","","","","",""]); setError(""); }}
                   style={{ fontSize:13, color:C.textSec, cursor:"pointer" }}>
                   ← Back to signup
                 </span>
               </div>
+            </>
+          ) : step==="forgot" ? (
+            <>
+              <div style={{ marginBottom:20 }}>
+                <label style={lbl}>Email Address</label>
+                <input style={inp} type="email" placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleForgotPassword()}/>
+              </div>
+              {error && <div style={{ background:"rgba(230,57,70,0.1)", border:`1px solid ${C.redBorder}`, borderRadius:8, padding:"0.7rem 1rem", marginBottom:16, fontSize:13, color:C.red }}>{error}</div>}
+              <button onClick={handleForgotPassword} disabled={loading} style={{ width:"100%", background:loading?"#333":C.red, color:"#fff", border:"none", borderRadius:9, padding:"0.8rem", fontWeight:700, cursor:loading?"not-allowed":"pointer", fontSize:15, fontFamily:"inherit" }}>
+                {loading ? "Sending..." : "Send Reset Link →"}
+              </button>
+              <div style={{ textAlign:"center", marginTop:"1.25rem" }}>
+                <span onClick={()=>{ setStep("form"); setError(""); }} style={{ fontSize:13, color:C.textSec, cursor:"pointer" }}>← Back to login</span>
+              </div>
+            </>
+          ) : step==="forgot-sent" ? (
+            <>
+              <div style={{ textAlign:"center", padding:"1.5rem 0" }}>
+                <div style={{ fontSize:48, marginBottom:12 }}>📬</div>
+                <div style={{ fontSize:15, color:C.text, fontWeight:600, marginBottom:8 }}>Reset link sent!</div>
+                <div style={{ fontSize:13, color:C.textSec, lineHeight:1.7 }}>
+                  We sent a password reset link to<br/>
+                  <span style={{ color:C.red, fontWeight:600 }}>{email}</span><br/>
+                  Check your inbox and click the link.
+                </div>
+              </div>
+              <button onClick={()=>{ setStep("form"); setError(""); }} style={{ width:"100%", background:"transparent", color:C.text, border:`1px solid ${C.border}`, borderRadius:9, padding:"0.8rem", fontWeight:600, cursor:"pointer", fontSize:15, fontFamily:"inherit" }}>
+                ← Back to Login
+              </button>
             </>
           ) : (
             <>
@@ -251,7 +296,7 @@ function AuthPage({ onLogin, onBack }) {
                 <label style={lbl}>Email</label>
                 <input style={inp} type="email" placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
               </div>
-              <div style={{ marginBottom:24 }}>
+              <div style={{ marginBottom: isLogin ? 8 : 24 }}>
                 <label style={lbl}>Password</label>
                 <div style={{ position:"relative" }}>
                   <input style={{ ...inp, paddingRight:44 }} type={showPass?"text":"password"} placeholder="min. 6 characters"
@@ -261,6 +306,13 @@ function AuthPage({ onLogin, onBack }) {
                   </button>
                 </div>
               </div>
+              {isLogin && (
+                <div style={{ textAlign:"right", marginBottom:20 }}>
+                  <span onClick={()=>{ setStep("forgot"); setError(""); }} style={{ fontSize:12, color:C.red, cursor:"pointer", fontWeight:600 }}>
+                    Forgot password?
+                  </span>
+                </div>
+              )}
 
               <button onClick={handleSubmit} disabled={loading} style={{
                 width:"100%", background:loading?"#333":C.red, color:"#fff", border:"none",
@@ -298,8 +350,8 @@ function useLivePrices() {
   const ASSETS = [
     { sym:"NIFTY",     ticker:"^NSEI",   prefix:"₹", base:22450 },
     { sym:"BANKNIFTY", ticker:"^NSEBANK",prefix:"₹", base:48210 },
-    { sym:"GOLD",      ticker:"GC=F",    prefix:"$", base:2340  },
-    { sym:"SILVER",    ticker:"SI=F",    prefix:"$", base:29.5  },
+    { sym:"XAUUSD",    ticker:"GC=F",    prefix:"$", base:4462.00, decimals:2 },
+    { sym:"XAGUSD",    ticker:"SI=F",    prefix:"$", base:80.17, decimals:2 },
     { sym:"BITCOIN",   ticker:"BTC-USD", prefix:"$", base:67000 },
   ];
   const [prices, setPrices] = useState(() =>
@@ -335,7 +387,7 @@ function PriceTicker({ prices }) {
           <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 28px", borderRight:`1px solid ${C.border}`, whiteSpace:"nowrap" }}>
             <span style={{ fontSize:11, fontWeight:700, color:"#dde4ee", fontFamily:"monospace", letterSpacing:"0.05em" }}>{p.sym}</span>
             <span style={{ fontSize:11, color:"#dde4ee", fontFamily:"monospace" }}>
-              {p.prefix}{p.sym==="GOLD"||p.sym==="SILVER" ? p.price.toFixed(2) : Math.round(p.price).toLocaleString()}
+              {p.prefix}{p.decimals ? p.price.toFixed(p.decimals) : Math.round(p.price).toLocaleString()}
             </span>
             <span style={{ fontSize:11, fontWeight:600, color: p.up ? C.green : C.red }}>
               {p.up ? "▲" : "▼"} {p.pct}%
@@ -355,7 +407,7 @@ function PriceCards({ prices }) {
         <div key={p.sym} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:"0.75rem 1rem", minWidth:110, textAlign:"center" }}>
           <div style={{ fontSize:10, fontWeight:700, color:C.textSec, letterSpacing:"0.08em", marginBottom:5 }}>{p.sym}</div>
           <div style={{ fontSize:14, fontWeight:700, color:C.text, fontFamily:"monospace", marginBottom:3 }}>
-            {p.prefix}{p.sym==="GOLD"||p.sym==="SILVER" ? p.price.toFixed(2) : Math.round(p.price).toLocaleString()}
+            {p.prefix}{p.decimals ? p.price.toFixed(p.decimals) : Math.round(p.price).toLocaleString()}
           </div>
           <div style={{ fontSize:11, fontWeight:600, color: p.up ? C.green : C.red }}>
             {p.up ? "▲" : "▼"} {p.pct}%

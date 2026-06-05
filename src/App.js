@@ -765,6 +765,16 @@ function AddTradeView({ onAdd, userId }) {
     localStorage.setItem("rr_fav_assets", JSON.stringify(updated));
   };
 
+  const toggleFavStrategy = (strategy) => {
+    const s = strategy.trim();
+    if (!s) return;
+    const updated = favStrategies.includes(s)
+      ? favStrategies.filter(x => x !== s)
+      : [...favStrategies, s];
+    setFavStrategies(updated);
+    localStorage.setItem("rr_fav_strategies", JSON.stringify(updated));
+  };
+
   const currSymbol = (code) => CURRENCIES.find(c=>c.code===code)?.symbol || "$";
 
   const handleSubmit = async () => {
@@ -877,9 +887,20 @@ function AddTradeView({ onAdd, userId }) {
                   </button>
                 </div>
                 {favStrategies.length > 0 && (
-                  <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:8 }}>
-                    {favStrategies.map(s=>(
-                      <button key={s} onClick={()=>setCfd("strategy",s)} style={{ background:cfdForm.strategy===s?C.redSoft:"transparent", border:`1px solid ${cfdForm.strategy===s?C.red:C.border}`, borderRadius:6, padding:"0.2rem 0.7rem", fontSize:11, color:cfdForm.strategy===s?C.red:C.textSec, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>{s}</button>
+                  <div style={{ marginTop:6, background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, overflow:"hidden" }}>
+                    {favStrategies.map((s,i)=>(
+                      <div key={s} onClick={()=>setCfd("strategy",s)} style={{
+                        display:"flex", justifyContent:"space-between", alignItems:"center",
+                        padding:"0.6rem 0.9rem",
+                        borderBottom:i<favStrategies.length-1?`1px solid ${C.border}`:"none",
+                        background:cfdForm.strategy===s?C.redSoft:"transparent",
+                        cursor:"pointer"
+                      }}
+                        onMouseEnter={e=>e.currentTarget.style.background=C.cardHover}
+                        onMouseLeave={e=>e.currentTarget.style.background=cfdForm.strategy===s?C.redSoft:"transparent"}>
+                        <span style={{ fontSize:13, color:cfdForm.strategy===s?C.red:C.text, fontWeight:cfdForm.strategy===s?600:400 }}>{s}</span>
+                        <span onClick={e=>{e.stopPropagation();toggleFavStrategy(s);}} style={{ fontSize:13, cursor:"pointer", color:C.textSec }}>✕</span>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -941,9 +962,20 @@ function AddTradeView({ onAdd, userId }) {
                   </button>
                 </div>
                 {favStrategies.length > 0 && (
-                  <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:8 }}>
-                    {favStrategies.map(s=>(
-                      <button key={s} onClick={()=>setFo("strategy",s)} style={{ background:foForm.strategy===s?C.redSoft:"transparent", border:`1px solid ${foForm.strategy===s?C.red:C.border}`, borderRadius:6, padding:"0.2rem 0.7rem", fontSize:11, color:foForm.strategy===s?C.red:C.textSec, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>{s}</button>
+                  <div style={{ marginTop:6, background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, overflow:"hidden" }}>
+                    {favStrategies.map((s,i)=>(
+                      <div key={s} onClick={()=>setFo("strategy",s)} style={{
+                        display:"flex", justifyContent:"space-between", alignItems:"center",
+                        padding:"0.6rem 0.9rem",
+                        borderBottom:i<favStrategies.length-1?`1px solid ${C.border}`:"none",
+                        background:foForm.strategy===s?C.redSoft:"transparent",
+                        cursor:"pointer"
+                      }}
+                        onMouseEnter={e=>e.currentTarget.style.background=C.cardHover}
+                        onMouseLeave={e=>e.currentTarget.style.background=foForm.strategy===s?C.redSoft:"transparent"}>
+                        <span style={{ fontSize:13, color:foForm.strategy===s?C.red:C.text, fontWeight:foForm.strategy===s?600:400 }}>{s}</span>
+                        <span onClick={e=>{e.stopPropagation();toggleFavStrategy(s);}} style={{ fontSize:13, cursor:"pointer", color:C.textSec }}>✕</span>
+                      </div>
                     ))}
                   </div>
                 )}

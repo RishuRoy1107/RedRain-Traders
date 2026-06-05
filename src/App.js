@@ -346,56 +346,33 @@ function AuthPage({ onLogin, onBack }) {
 /* ═══════════════════════════════════════
    LANDING PAGE
 ═══════════════════════════════════════ */
-function useLivePrices() {
-  const ASSETS = [
-    { sym:"NIFTY",     ticker:"^NSEI",   prefix:"₹", base:22450 },
-    { sym:"BANKNIFTY", ticker:"^NSEBANK",prefix:"₹", base:48210 },
-    { sym:"XAUUSD",    ticker:"GC=F",    prefix:"$", base:4462.00, decimals:2 },
-    { sym:"XAGUSD",    ticker:"SI=F",    prefix:"$", base:80.17, decimals:2 },
-    { sym:"BITCOIN",   ticker:"BTC-USD", prefix:"$", base:67000 },
-  ];
-  const [prices, setPrices] = useState(() =>
-    ASSETS.map(a => ({ ...a, price: a.base, change: 0, pct: 0, up: true }))
-  );
-
+function TradingViewTicker() {
+  const ref = useRef(null);
   useEffect(() => {
-    // Simulate realistic price movement (Yahoo Finance blocks CORS in browser)
-    // For production, use a backend proxy to fetch real Yahoo Finance data
-    const update = () => {
-      setPrices(prev => prev.map(p => {
-        const chg = (Math.random() - 0.48) * p.base * 0.002;
-        const newPrice = Math.max(0, p.price + chg);
-        const pct = +((chg / p.price) * 100).toFixed(2);
-        return { ...p, price: newPrice, change: chg, pct: Math.abs(pct), up: chg >= 0 };
-      }));
-    };
-    const interval = setInterval(update, 3000);
-    return () => clearInterval(interval);
+    if (!ref.current || ref.current.querySelector("script")) return;
+    const script = document.createElement("script");
+    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js";
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      symbols: [
+        { proName:"OANDA:XAUUSD",   title:"Gold"       },
+        { proName:"OANDA:XAGUSD",   title:"Silver"     },
+        { proName:"COINBASE:BTCUSD",title:"Bitcoin"    },
+        { proName:"NSE:NIFTY50",    title:"Nifty 50"   },
+        { proName:"NSE:BANKNIFTY",  title:"Bank Nifty" },
+        { proName:"OANDA:EURUSD",   title:"EUR/USD"    },
+      ],
+      showSymbolLogo: true,
+      isTransparent: true,
+      displayMode: "adaptive",
+      colorTheme: "dark",
+      locale: "en"
+    });
+    ref.current.appendChild(script);
   }, []);
-
-  return prices;
-}
-
-function PriceTicker({ prices }) {
-  const doubled = [...prices, ...prices];
   return (
-    <div style={{ background:"#050709", borderBottom:`1px solid ${C.border}`, overflow:"hidden", position:"relative" }}>
-      <div style={{ position:"absolute", left:0, top:0, bottom:0, width:60, background:"linear-gradient(to right, #050709, transparent)", zIndex:2 }}/>
-      <div style={{ position:"absolute", right:0, top:0, bottom:0, width:60, background:"linear-gradient(to left, #050709, transparent)", zIndex:2 }}/>
-      <div style={{ display:"flex", animation:"tickerScroll 25s linear infinite", width:"max-content" }}>
-        {doubled.map((p, i) => (
-          <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 28px", borderRight:`1px solid ${C.border}`, whiteSpace:"nowrap" }}>
-            <span style={{ fontSize:11, fontWeight:700, color:"#dde4ee", fontFamily:"monospace", letterSpacing:"0.05em" }}>{p.sym}</span>
-            <span style={{ fontSize:11, color:"#dde4ee", fontFamily:"monospace" }}>
-              {p.prefix}{p.decimals ? p.price.toFixed(p.decimals) : Math.round(p.price).toLocaleString()}
-            </span>
-            <span style={{ fontSize:11, fontWeight:600, color: p.up ? C.green : C.red }}>
-              {p.up ? "▲" : "▼"} {p.pct}%
-            </span>
-          </div>
-        ))}
-      </div>
-      <style>{`@keyframes tickerScroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }`}</style>
+    <div ref={ref} className="tradingview-widget-container" style={{ borderBottom:`1px solid ${C.border}` }}>
+      <div className="tradingview-widget-container__widget"></div>
     </div>
   );
 }
@@ -438,6 +415,10 @@ function TradingViewMarket() {
       <div className="tradingview-widget-container__widget"></div>
     </div>
   );
+}
+
+function PriceTicker() {
+  return <TradingViewTicker />;
 }
 
 function PriceCards({ prices }) {

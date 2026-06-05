@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 /* ─── THEME ─── */
-const C = {
+const DARK_THEME = {
   bg:"#07090c", surface:"#0c1018", card:"#111820", cardHover:"#161f2a",
   border:"#1a2535", borderHover:"#243040",
   red:"#e63946", redSoft:"rgba(230,57,70,0.12)", redBorder:"rgba(230,57,70,0.3)",
@@ -19,6 +19,17 @@ const C = {
   amber:"#f5a623", blue:"#4a9eff",
   text:"#dde4ee", textSec:"#556070", textMuted:"#1e2a35", white:"#ffffff",
 };
+
+const LIGHT_THEME = {
+  bg:"#f4f6f9", surface:"#ffffff", card:"#ffffff", cardHover:"#f0f2f5",
+  border:"#e2e8f0", borderHover:"#cbd5e1",
+  red:"#e63946", redSoft:"rgba(230,57,70,0.08)", redBorder:"rgba(230,57,70,0.3)",
+  green:"#16a34a", greenSoft:"rgba(22,163,74,0.1)",
+  amber:"#d97706", blue:"#2563eb",
+  text:"#0f172a", textSec:"#64748b", textMuted:"#cbd5e1", white:"#ffffff",
+};
+
+let C = { ...DARK_THEME };
 
 /* ─── UTILS ─── */
 const fmt = (n) => (n >= 0 ? "+" : "") + n.toLocaleString("en-IN");
@@ -739,6 +750,9 @@ function AddTradeView({ onAdd, userId }) {
   const [favourites, setFavourites] = useState(() => {
     try { return JSON.parse(localStorage.getItem("rr_fav_assets") || "[]"); } catch { return []; }
   });
+  const [favStrategies, setFavStrategies] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("rr_fav_strategies") || '["Trend Follow","Reversal","Breakout","Scalp"]'); } catch { return ["Trend Follow","Reversal","Breakout","Scalp"]; }
+  });
 
   const setCfd = (k,v) => setCfdForm(f=>({...f,[k]:v}));
   const setFo  = (k,v) => setFoForm(f=>({...f,[k]:v}));
@@ -853,7 +867,23 @@ function AddTradeView({ onAdd, userId }) {
             </div>
             <div style={row}>
               <div><label style={lbl}>Lot Size</label><input type="number" min="0" step="0.01" style={inp} placeholder="e.g. 0.1" value={cfdForm.lotSize} onChange={e=>setCfd("lotSize", Math.abs(e.target.value).toString())}/></div>
-              <div><label style={lbl}>Strategy</label><select style={{ ...inp, cursor:"pointer" }} value={cfdForm.strategy} onChange={e=>setCfd("strategy",e.target.value)}>{STRATEGIES.map(s=><option key={s}>{s}</option>)}</select></div>
+              <div>
+                <label style={lbl}>Strategy</label>
+                <div style={{ display:"flex", gap:8 }}>
+                  <input style={{ ...inp }} placeholder="e.g. Trend Follow, Scalp..." value={cfdForm.strategy} onChange={e=>setCfd("strategy",e.target.value)}/>
+                  <button onClick={()=>toggleFavStrategy(cfdForm.strategy)} title={favStrategies.includes(cfdForm.strategy.trim())?"Remove":"Save strategy"}
+                    style={{ background:favStrategies.includes(cfdForm.strategy.trim())?"rgba(245,166,35,0.15)":"transparent", border:`1px solid ${favStrategies.includes(cfdForm.strategy.trim())?"#f5a623":C.border}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:18, flexShrink:0 }}>
+                    {favStrategies.includes(cfdForm.strategy.trim()) ? "⭐" : "☆"}
+                  </button>
+                </div>
+                {favStrategies.length > 0 && (
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:8 }}>
+                    {favStrategies.map(s=>(
+                      <button key={s} onClick={()=>setCfd("strategy",s)} style={{ background:cfdForm.strategy===s?C.redSoft:"transparent", border:`1px solid ${cfdForm.strategy===s?C.red:C.border}`, borderRadius:6, padding:"0.2rem 0.7rem", fontSize:11, color:cfdForm.strategy===s?C.red:C.textSec, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>{s}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div style={row}>
               <div><label style={lbl}>Stop Loss — SL ({sym}) <span style={{color:C.textSec,fontWeight:400}}>(optional)</span></label><input type="number" min="0" style={inp} placeholder="e.g. 1.1950" value={cfdForm.sl} onChange={e=>setCfd("sl",e.target.value)}/></div>
@@ -901,7 +931,23 @@ function AddTradeView({ onAdd, userId }) {
             </div>
             <div style={row}>
               <div><label style={lbl}>Quantity / Lots</label><input type="number" min="0" step="1" style={inp} placeholder="1" value={foForm.qty} onChange={e=>setFo("qty", Math.abs(e.target.value).toString())}/></div>
-              <div><label style={lbl}>Strategy</label><select style={{ ...inp, cursor:"pointer" }} value={foForm.strategy} onChange={e=>setFo("strategy",e.target.value)}>{STRATEGIES.map(s=><option key={s}>{s}</option>)}</select></div>
+              <div>
+                <label style={lbl}>Strategy</label>
+                <div style={{ display:"flex", gap:8 }}>
+                  <input style={{ ...inp }} placeholder="e.g. Trend Follow, Scalp..." value={foForm.strategy} onChange={e=>setFo("strategy",e.target.value)}/>
+                  <button onClick={()=>toggleFavStrategy(foForm.strategy)} title={favStrategies.includes(foForm.strategy.trim())?"Remove":"Save strategy"}
+                    style={{ background:favStrategies.includes(foForm.strategy.trim())?"rgba(245,166,35,0.15)":"transparent", border:`1px solid ${favStrategies.includes(foForm.strategy.trim())?"#f5a623":C.border}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:18, flexShrink:0 }}>
+                    {favStrategies.includes(foForm.strategy.trim()) ? "⭐" : "☆"}
+                  </button>
+                </div>
+                {favStrategies.length > 0 && (
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:8 }}>
+                    {favStrategies.map(s=>(
+                      <button key={s} onClick={()=>setFo("strategy",s)} style={{ background:foForm.strategy===s?C.redSoft:"transparent", border:`1px solid ${foForm.strategy===s?C.red:C.border}`, borderRadius:6, padding:"0.2rem 0.7rem", fontSize:11, color:foForm.strategy===s?C.red:C.textSec, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>{s}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div style={row}>
               <div><label style={lbl}>Stop Loss — SL ({sym}) <span style={{color:C.textSec,fontWeight:400}}>(optional)</span></label><input type="number" min="0" style={inp} placeholder="e.g. 21800" value={foForm.sl} onChange={e=>setFo("sl",e.target.value)}/></div>
@@ -1051,6 +1097,35 @@ function HistoryView({ trades, onDelete, convertPnl, currSym }) {
           </div>
         ))}
       </div>
+
+      {/* WIN/LOSS TOTALS */}
+      {filtered.length > 0 && (()=>{
+        const wins   = filtered.filter(t=>t.pnl>0);
+        const losses = filtered.filter(t=>t.pnl<0);
+        const totalWin  = wins.reduce((a,t)=>a+(convertPnl?convertPnl(t.pnl,t.currency||"USD"):t.pnl),0);
+        const totalLoss = losses.reduce((a,t)=>a+(convertPnl?convertPnl(t.pnl,t.currency||"USD"):t.pnl),0);
+        const net = totalWin + totalLoss;
+        const sym = currSym||"$";
+        return (
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginTop:12 }}>
+            <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:"0.9rem 1rem" }}>
+              <div style={{ fontSize:11, color:C.textSec, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.05em" }}>✅ Total Wins</div>
+              <div style={{ fontSize:15, fontWeight:700, color:C.green, fontFamily:"monospace" }}>+{sym}{Math.abs(totalWin).toLocaleString()}</div>
+              <div style={{ fontSize:11, color:C.textSec, marginTop:3 }}>{wins.length} winning trades</div>
+            </div>
+            <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:"0.9rem 1rem" }}>
+              <div style={{ fontSize:11, color:C.textSec, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.05em" }}>❌ Total Losses</div>
+              <div style={{ fontSize:15, fontWeight:700, color:C.red, fontFamily:"monospace" }}>{sym}{Math.abs(totalLoss).toLocaleString()}</div>
+              <div style={{ fontSize:11, color:C.textSec, marginTop:3 }}>{losses.length} losing trades</div>
+            </div>
+            <div style={{ background:C.card, border:`2px solid ${net>=0?C.green:C.red}`, borderRadius:10, padding:"0.9rem 1rem" }}>
+              <div style={{ fontSize:11, color:C.textSec, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.05em" }}>💰 Net P&L</div>
+              <div style={{ fontSize:15, fontWeight:700, color:net>=0?C.green:C.red, fontFamily:"monospace" }}>{net>=0?"+":""}{sym}{Math.abs(net).toLocaleString()}</div>
+              <div style={{ fontSize:11, color:C.textSec, marginTop:3 }}>{filtered.length} total trades</div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -1415,17 +1490,34 @@ function BacktestingView({ trades, convertPnl, currSym }) {
 /* ═══════════════════════════════════════
    SETTINGS VIEW
 ═══════════════════════════════════════ */
-function SettingsView({ displayCurrency, onCurrencyChange, rates, loadingRates }) {
-  const inp = { background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, padding:"0.7rem 1rem", color:C.text, fontSize:14, outline:"none", width:"100%", boxSizing:"border-box", fontFamily:"inherit" };
+function SettingsView({ displayCurrency, onCurrencyChange, rates, loadingRates, theme, onThemeChange }) {
   return (
-    <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1 }}>
+    <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1, background:C.bg }}>
       <div style={{ marginBottom:"1.75rem" }}>
         <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Settings</h1>
         <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Customize your trading journal experience.</p>
       </div>
 
       <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"1.75rem", maxWidth:500 }}>
+
+        {/* THEME TOGGLE */}
         <div style={{ marginBottom:"1.5rem" }}>
+          <div style={{ fontSize:15, fontWeight:700, color:C.text, marginBottom:4 }}>Theme</div>
+          <div style={{ fontSize:13, color:C.textSec, marginBottom:16 }}>Choose your preferred display theme.</div>
+          <div style={{ display:"flex", gap:0, background:C.surface, borderRadius:10, padding:4, maxWidth:280 }}>
+            {[["dark","🌙 Dark"],["light","☀️ Light"]].map(([t, label]) => (
+              <button key={t} onClick={()=>onThemeChange(t)} style={{
+                flex:1, padding:"0.65rem 1rem", borderRadius:8, border:"none",
+                background: theme===t ? C.red : "transparent",
+                color: theme===t ? "#fff" : C.textSec,
+                fontWeight:600, cursor:"pointer", fontSize:14, fontFamily:"inherit",
+                transition:"all 0.2s"
+              }}>{label}</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:"1.5rem", marginBottom:"1.5rem" }}>
           <div style={{ fontSize:15, fontWeight:700, color:C.text, marginBottom:4 }}>Display Currency</div>
           <div style={{ fontSize:13, color:C.textSec, marginBottom:16 }}>
             All P&L, dashboard stats and analytics will be shown in this currency using live exchange rates.
@@ -1437,8 +1529,7 @@ function SettingsView({ displayCurrency, onCurrencyChange, rates, loadingRates }
                 border:`2px solid ${displayCurrency===c.code ? C.red : C.border}`,
                 background: displayCurrency===c.code ? C.redSoft : "transparent",
                 color: displayCurrency===c.code ? C.red : C.textSec,
-                cursor:"pointer", fontFamily:"inherit", textAlign:"center",
-                transition:"all 0.2s"
+                cursor:"pointer", fontFamily:"inherit", textAlign:"center", transition:"all 0.2s"
               }}>
                 <div style={{ fontSize:24, marginBottom:4 }}>{c.symbol}</div>
                 <div style={{ fontSize:13, fontWeight:700 }}>{c.code}</div>
@@ -1487,6 +1578,19 @@ export default function App() {
   const [displayCurrency, setDisplayCurrency] = useState(() => localStorage.getItem("rr_currency") || "USD");
   const [rates, setRates] = useState({});
   const [loadingRates, setLoadingRates] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem("rr_theme") || "dark");
+  const [newPass, setNewPass] = useState("");
+  const [newPassConfirm, setNewPassConfirm] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetMsg, setResetMsg] = useState("");
+
+  // Apply theme
+  C = theme === "light" ? { ...LIGHT_THEME } : { ...DARK_THEME };
+
+  const handleThemeChange = (t) => {
+    setTheme(t);
+    localStorage.setItem("rr_theme", t);
+  };
 
   // Check if user is already logged in (session persists across page refresh)
   useEffect(()=>{
@@ -1494,12 +1598,22 @@ export default function App() {
       if(session){
         const name = session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "Trader";
         setUser({ name, id:session.user.id });
-        setScreen("app");
-        loadTrades(session.user.id);
+        // Check if this is a password recovery session
+        const hash = window.location.hash;
+        if(hash.includes("type=recovery")) {
+          setScreen("resetPassword");
+        } else {
+          setScreen("app");
+          loadTrades(session.user.id);
+        }
       }
     });
-    const { data:{ subscription } } = supabase.auth.onAuthStateChange((_event, session)=>{
-      if(!session) { setScreen("landing"); setUser({ name:"", id:"" }); setTrades([]); }
+    const { data:{ subscription } } = supabase.auth.onAuthStateChange((event, session)=>{
+      if(event === "PASSWORD_RECOVERY") {
+        setScreen("resetPassword");
+      } else if(!session) {
+        setScreen("landing"); setUser({ name:"", id:"" }); setTrades([]);
+      }
     });
     return ()=>subscription.unsubscribe();
   },[]);
@@ -1558,6 +1672,45 @@ export default function App() {
   if(screen==="landing") return <LandingPage onGetStarted={()=>setScreen("auth")}/>;
   if(screen==="auth") return <AuthPage onLogin={handleLogin} onBack={()=>setScreen("landing")}/>;
 
+  if(screen==="resetPassword") return (
+    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"sans-serif", padding:"2rem" }}>
+      <div style={{ width:"100%", maxWidth:400 }}>
+        <div style={{ textAlign:"center", marginBottom:"2rem" }}>
+          <div style={{ display:"flex", justifyContent:"center", marginBottom:"1.5rem" }}><Logo size="lg"/></div>
+          <h2 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.4rem" }}>Set New Password</h2>
+          <p style={{ color:C.textSec, fontSize:14 }}>Enter your new password below</p>
+        </div>
+        <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"2rem" }}>
+          {resetMsg && <div style={{ background:C.greenSoft, border:"1px solid rgba(31,208,122,0.3)", borderRadius:8, padding:"0.7rem 1rem", marginBottom:16, fontSize:13, color:C.green }}>{resetMsg}</div>}
+          <div style={{ marginBottom:16 }}>
+            <label style={{ fontSize:13, color:C.textSec, marginBottom:6, display:"block" }}>New Password</label>
+            <input type="password" style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, padding:"0.7rem 1rem", color:C.text, fontSize:14, outline:"none", width:"100%", boxSizing:"border-box", fontFamily:"inherit" }}
+              placeholder="min. 6 characters" value={newPass} onChange={e=>setNewPass(e.target.value)}/>
+          </div>
+          <div style={{ marginBottom:24 }}>
+            <label style={{ fontSize:13, color:C.textSec, marginBottom:6, display:"block" }}>Confirm New Password</label>
+            <input type="password" style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, padding:"0.7rem 1rem", color:C.text, fontSize:14, outline:"none", width:"100%", boxSizing:"border-box", fontFamily:"inherit" }}
+              placeholder="repeat password" value={newPassConfirm} onChange={e=>setNewPassConfirm(e.target.value)}/>
+          </div>
+          <button disabled={resetLoading} onClick={async()=>{
+            if(newPass !== newPassConfirm) { setResetMsg("❌ Passwords do not match!"); return; }
+            if(newPass.length < 6) { setResetMsg("❌ Password must be at least 6 characters."); return; }
+            setResetLoading(true);
+            const { error } = await supabase.auth.updateUser({ password: newPass });
+            setResetLoading(false);
+            if(error) { setResetMsg("❌ " + error.message); }
+            else {
+              setResetMsg("✅ Password updated! Redirecting to login...");
+              setTimeout(()=>{ setScreen("auth"); setNewPass(""); setNewPassConfirm(""); setResetMsg(""); }, 2000);
+            }
+          }} style={{ width:"100%", background:resetLoading?"#333":C.red, color:"#fff", border:"none", borderRadius:9, padding:"0.8rem", fontWeight:700, cursor:resetLoading?"not-allowed":"pointer", fontSize:15, fontFamily:"inherit" }}>
+            {resetLoading ? "Saving..." : "Set New Password →"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ display:"flex", height:"100vh", background:C.bg, fontFamily:"sans-serif", overflow:"hidden" }}>
       <Sidebar active={tab} setActive={setTab} userName={user.name} onLogout={handleLogout} isOpen={sidebarOpen} onToggle={()=>setSidebarOpen(v=>!v)}/>
@@ -1583,7 +1736,7 @@ export default function App() {
               {tab==="history"      && <HistoryView trades={trades} onDelete={deleteTrade} convertPnl={convertPnl} currSym={currSym}/>}
               {tab==="analytics"    && <AnalyticsView trades={trades} convertPnl={convertPnl} currSym={currSym}/>}
               {tab==="backtesting"  && <BacktestingView trades={trades} convertPnl={convertPnl} currSym={currSym}/>}
-              {tab==="settings"     && <SettingsView displayCurrency={displayCurrency} onCurrencyChange={handleCurrencyChange} rates={rates} loadingRates={loadingRates}/>}
+              {tab==="settings"     && <SettingsView displayCurrency={displayCurrency} onCurrencyChange={handleCurrencyChange} rates={rates} loadingRates={loadingRates} theme={theme} onThemeChange={handleThemeChange}/>}
             </>
           )}
         </div>

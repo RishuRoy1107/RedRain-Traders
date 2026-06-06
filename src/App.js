@@ -710,29 +710,39 @@ const CURRENCIES = [
 ];
 
 function AssetInput({ value, onChange, favourites, onToggleFav }) {
+  const [open, setOpen] = React.useState(false);
   const isFav = favourites.includes(value.trim().toUpperCase());
   const inp = { background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, padding:"0.7rem 1rem", color:C.text, fontSize:14, outline:"none", width:"100%", boxSizing:"border-box", fontFamily:"inherit" };
   return (
-    <div>
+    <div style={{ position:"relative" }}>
       <div style={{ display:"flex", gap:8 }}>
         <input style={{ ...inp, textTransform:"uppercase" }} placeholder="e.g. EURUSD, GOLD, BTC, NIFTY..."
           value={value} onChange={e => onChange(e.target.value.toUpperCase())} />
+        <button onClick={()=>favourites.length>0&&setOpen(v=>!v)}
+          title={favourites.length>0?"Show saved symbols":"Save a symbol first"}
+          style={{ background:open?"rgba(74,158,255,0.12)":"rgba(74,158,255,0.06)", border:`1.5px solid ${open?"#4a9eff":"rgba(74,158,255,0.35)"}`, borderRadius:9, padding:"0 0.75rem", cursor:favourites.length>0?"pointer":"default", fontSize:13, flexShrink:0, color:open?"#4a9eff":"rgba(74,158,255,0.7)", fontWeight:700, opacity:favourites.length>0?1:0.5 }}>
+          ▼
+        </button>
         <button onClick={onToggleFav} title={isFav ? "Remove from favourites" : "Save to favourites"}
-          style={{ background: isFav ? "rgba(245,166,35,0.15)" : C.surface, border:`1px solid ${isFav ? "#f5a623" : C.border}`, borderRadius:9, padding:"0 0.85rem", cursor:"pointer", fontSize:20, flexShrink:0 }}>
+          style={{ background: isFav ? "rgba(245,166,35,0.2)" : "rgba(245,166,35,0.06)", border:`1.5px solid ${isFav ? "#f5a623" : "rgba(245,166,35,0.4)"}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:18, flexShrink:0, color:"#f5a623" }}>
           {isFav ? "⭐" : "☆"}
         </button>
       </div>
-      {favourites.length > 0 && (
-        <div style={{ marginTop:8 }}>
-          <div style={{ fontSize:11, color:C.textSec, marginBottom:5 }}>⭐ Favourites:</div>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-            {favourites.map(f => (
-              <button key={f} onClick={() => onChange(f)}
-                style={{ background: value===f ? C.redSoft : C.surface, border:`1px solid ${value===f ? C.red : C.border}`, borderRadius:6, padding:"0.2rem 0.7rem", fontSize:12, color: value===f ? C.red : C.textSec, cursor:"pointer", fontWeight:600, fontFamily:"inherit" }}>
-                {f}
-              </button>
-            ))}
-          </div>
+      {open && favourites.length > 0 && (
+        <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:C.card, border:`1px solid ${C.border}`, borderRadius:10, zIndex:100, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
+          {favourites.map((f,i) => (
+            <div key={f} onClick={()=>{ onChange(f); setOpen(false); }} style={{
+              padding:"0.65rem 1rem", fontSize:14, fontWeight:500,
+              color: value===f ? C.red : C.text,
+              background: value===f ? C.redSoft : "transparent",
+              borderBottom: i<favourites.length-1 ? `1px solid ${C.border}` : "none",
+              cursor:"pointer"
+            }}
+              onMouseEnter={e=>e.currentTarget.style.background=C.cardHover}
+              onMouseLeave={e=>e.currentTarget.style.background=value===f?C.redSoft:"transparent"}>
+              {f}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -753,6 +763,8 @@ function AddTradeView({ onAdd, userId }) {
   const [favStrategies, setFavStrategies] = useState(() => {
     try { return JSON.parse(localStorage.getItem("rr_fav_strategies") || '["Trend Follow","Reversal","Breakout","Scalp"]'); } catch { return ["Trend Follow","Reversal","Breakout","Scalp"]; }
   });
+  const [cfdStratOpen, setCfdStratOpen] = useState(false);
+  const [foStratOpen,  setFoStratOpen]  = useState(false);
 
   const setCfd = (k,v) => setCfdForm(f=>({...f,[k]:v}));
   const setFo  = (k,v) => setFoForm(f=>({...f,[k]:v}));
@@ -852,7 +864,13 @@ function AddTradeView({ onAdd, userId }) {
         {tradeMode==="cfd" && (
           <>
             <div style={row}>
-              <div><label style={lbl}>Date</label><input type="date" style={inp} value={cfdForm.date} onChange={e=>setCfd("date",e.target.value)}/></div>
+              <div>
+                <label style={lbl}>Date</label>
+                <div style={{ position:"relative" }}>
+                  <input type="date" style={{ ...inp, border:"1.5px solid #2a3a50", colorScheme:"dark", paddingRight:36 }} value={cfdForm.date} onChange={e=>setCfd("date",e.target.value)}/>
+                  <span style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", color:"#4a7ab5", fontSize:16, pointerEvents:"none" }}>📅</span>
+                </div>
+              </div>
               <div>
                 <label style={lbl}>Asset / Symbol</label>
                 <AssetInput value={cfdForm.asset} onChange={v=>setCfd("asset",v)} favourites={favourites} onToggleFav={()=>toggleFav(cfdForm.asset)}/>
@@ -876,30 +894,50 @@ function AddTradeView({ onAdd, userId }) {
               <div><label style={lbl}>Exit Price ({sym})</label><input type="number" style={inp} placeholder="1.2150" value={cfdForm.exit} onChange={e=>setCfd("exit",e.target.value)}/></div>
             </div>
             <div style={row}>
-              <div><label style={lbl}>Lot Size</label><input type="number" min="0" step="0.01" style={inp} placeholder="e.g. 0.1" value={cfdForm.lotSize} onChange={e=>setCfd("lotSize", Math.abs(e.target.value).toString())}/></div>
               <div>
+                <label style={lbl}>Lot Size</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  style={inp}
+                  placeholder="e.g. 0.01, 0.1, 1.5"
+                  value={cfdForm.lotSize}
+                  onKeyDown={e=>{ if(["-","e","E","+"].includes(e.key)) e.preventDefault(); }}
+                  onChange={e=>{
+                    const v = e.target.value;
+                    if(v === "" || /^\d*\.?\d{0,2}$/.test(v)) setCfd("lotSize", v);
+                  }}
+                />
+              </div>
+              <div style={{ position:"relative" }}>
                 <label style={lbl}>Strategy</label>
                 <div style={{ display:"flex", gap:8 }}>
-                  <input style={{ ...inp }} placeholder="e.g. Trend Follow, Scalp..." value={cfdForm.strategy} onChange={e=>setCfd("strategy",e.target.value)}/>
-                  <button onClick={()=>toggleFavStrategy(cfdForm.strategy)} title={favStrategies.includes(cfdForm.strategy.trim())?"Remove":"Save strategy"}
-                    style={{ background:favStrategies.includes(cfdForm.strategy.trim())?"rgba(245,166,35,0.15)":"transparent", border:`1px solid ${favStrategies.includes(cfdForm.strategy.trim())?"#f5a623":C.border}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:18, flexShrink:0 }}>
+                  <input style={{ ...inp }} placeholder="Type or pick strategy..." value={cfdForm.strategy} onChange={e=>setCfd("strategy",e.target.value)}/>
+                  <button onClick={()=>favStrategies.length>0&&setCfdStratOpen(v=>!v)}
+                    title={favStrategies.length>0?"Show saved strategies":"Save a strategy first"}
+                    style={{ background:cfdStratOpen?"rgba(74,158,255,0.12)":"rgba(74,158,255,0.06)", border:`1.5px solid ${cfdStratOpen?"#4a9eff":"rgba(74,158,255,0.35)"}`, borderRadius:9, padding:"0 0.75rem", cursor:favStrategies.length>0?"pointer":"default", fontSize:13, flexShrink:0, color:cfdStratOpen?"#4a9eff":"rgba(74,158,255,0.7)", fontWeight:700, opacity:favStrategies.length>0?1:0.5 }}>
+                    ▼
+                  </button>
+                  <button onClick={()=>toggleFavStrategy(cfdForm.strategy)}
+                    style={{ background:favStrategies.includes(cfdForm.strategy.trim())?"rgba(245,166,35,0.2)":"rgba(245,166,35,0.06)", border:`1.5px solid ${favStrategies.includes(cfdForm.strategy.trim())?"#f5a623":"rgba(245,166,35,0.4)"}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:18, flexShrink:0, color:"#f5a623" }}>
                     {favStrategies.includes(cfdForm.strategy.trim()) ? "⭐" : "☆"}
                   </button>
                 </div>
-                {favStrategies.length > 0 && (
-                  <div style={{ marginTop:6, background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, overflow:"hidden" }}>
+                {cfdStratOpen && favStrategies.length > 0 && (
+                  <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:C.card, border:`1px solid ${C.border}`, borderRadius:10, zIndex:100, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
                     {favStrategies.map((s,i)=>(
-                      <div key={s} onClick={()=>setCfd("strategy",s)} style={{
+                      <div key={s} onClick={()=>{ setCfd("strategy",s); setCfdStratOpen(false); }} style={{
                         display:"flex", justifyContent:"space-between", alignItems:"center",
-                        padding:"0.6rem 0.9rem",
-                        borderBottom:i<favStrategies.length-1?`1px solid ${C.border}`:"none",
+                        padding:"0.65rem 1rem", fontSize:14,
+                        color:cfdForm.strategy===s?C.red:C.text,
                         background:cfdForm.strategy===s?C.redSoft:"transparent",
+                        borderBottom:i<favStrategies.length-1?`1px solid ${C.border}`:"none",
                         cursor:"pointer"
                       }}
                         onMouseEnter={e=>e.currentTarget.style.background=C.cardHover}
                         onMouseLeave={e=>e.currentTarget.style.background=cfdForm.strategy===s?C.redSoft:"transparent"}>
-                        <span style={{ fontSize:13, color:cfdForm.strategy===s?C.red:C.text, fontWeight:cfdForm.strategy===s?600:400 }}>{s}</span>
-                        <span onClick={e=>{e.stopPropagation();toggleFavStrategy(s);}} style={{ fontSize:13, cursor:"pointer", color:C.textSec }}>✕</span>
+                        <span>{s}</span>
+                        <span onClick={e=>{e.stopPropagation();toggleFavStrategy(s);}} style={{ fontSize:12, color:C.textSec, cursor:"pointer", padding:"2px 6px" }}>✕</span>
                       </div>
                     ))}
                   </div>
@@ -917,7 +955,13 @@ function AddTradeView({ onAdd, userId }) {
         {tradeMode==="fo" && (
           <>
             <div style={row}>
-              <div><label style={lbl}>Date</label><input type="date" style={inp} value={foForm.date} onChange={e=>setFo("date",e.target.value)}/></div>
+              <div>
+                <label style={lbl}>Date</label>
+                <div style={{ position:"relative" }}>
+                  <input type="date" style={{ ...inp, border:"1.5px solid #2a3a50", colorScheme:"dark", paddingRight:36 }} value={foForm.date} onChange={e=>setFo("date",e.target.value)}/>
+                  <span style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", color:"#4a7ab5", fontSize:16, pointerEvents:"none" }}>📅</span>
+                </div>
+              </div>
               <div>
                 <label style={lbl}>Asset / Symbol</label>
                 <AssetInput value={foForm.asset} onChange={v=>setFo("asset",v)} favourites={favourites} onToggleFav={()=>toggleFav(foForm.asset)}/>
@@ -952,29 +996,35 @@ function AddTradeView({ onAdd, userId }) {
             </div>
             <div style={row}>
               <div><label style={lbl}>Quantity / Lots</label><input type="number" min="0" step="1" style={inp} placeholder="1" value={foForm.qty} onChange={e=>setFo("qty", Math.abs(e.target.value).toString())}/></div>
-              <div>
+              <div style={{ position:"relative" }}>
                 <label style={lbl}>Strategy</label>
                 <div style={{ display:"flex", gap:8 }}>
-                  <input style={{ ...inp }} placeholder="e.g. Trend Follow, Scalp..." value={foForm.strategy} onChange={e=>setFo("strategy",e.target.value)}/>
-                  <button onClick={()=>toggleFavStrategy(foForm.strategy)} title={favStrategies.includes(foForm.strategy.trim())?"Remove":"Save strategy"}
-                    style={{ background:favStrategies.includes(foForm.strategy.trim())?"rgba(245,166,35,0.15)":"transparent", border:`1px solid ${favStrategies.includes(foForm.strategy.trim())?"#f5a623":C.border}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:18, flexShrink:0 }}>
+                  <input style={{ ...inp }} placeholder="Type or pick strategy..." value={foForm.strategy} onChange={e=>setFo("strategy",e.target.value)}/>
+                  <button onClick={()=>favStrategies.length>0&&setFoStratOpen(v=>!v)}
+                    title={favStrategies.length>0?"Show saved strategies":"Save a strategy first"}
+                    style={{ background:foStratOpen?"rgba(74,158,255,0.12)":"rgba(74,158,255,0.06)", border:`1.5px solid ${foStratOpen?"#4a9eff":"rgba(74,158,255,0.35)"}`, borderRadius:9, padding:"0 0.75rem", cursor:favStrategies.length>0?"pointer":"default", fontSize:13, flexShrink:0, color:foStratOpen?"#4a9eff":"rgba(74,158,255,0.7)", fontWeight:700, opacity:favStrategies.length>0?1:0.5 }}>
+                    ▼
+                  </button>
+                  <button onClick={()=>toggleFavStrategy(foForm.strategy)}
+                    style={{ background:favStrategies.includes(foForm.strategy.trim())?"rgba(245,166,35,0.2)":"rgba(245,166,35,0.06)", border:`1.5px solid ${favStrategies.includes(foForm.strategy.trim())?"#f5a623":"rgba(245,166,35,0.4)"}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:18, flexShrink:0, color:"#f5a623" }}>
                     {favStrategies.includes(foForm.strategy.trim()) ? "⭐" : "☆"}
                   </button>
                 </div>
-                {favStrategies.length > 0 && (
-                  <div style={{ marginTop:6, background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, overflow:"hidden" }}>
+                {foStratOpen && favStrategies.length > 0 && (
+                  <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:C.card, border:`1px solid ${C.border}`, borderRadius:10, zIndex:100, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
                     {favStrategies.map((s,i)=>(
-                      <div key={s} onClick={()=>setFo("strategy",s)} style={{
+                      <div key={s} onClick={()=>{ setFo("strategy",s); setFoStratOpen(false); }} style={{
                         display:"flex", justifyContent:"space-between", alignItems:"center",
-                        padding:"0.6rem 0.9rem",
-                        borderBottom:i<favStrategies.length-1?`1px solid ${C.border}`:"none",
+                        padding:"0.65rem 1rem", fontSize:14,
+                        color:foForm.strategy===s?C.red:C.text,
                         background:foForm.strategy===s?C.redSoft:"transparent",
+                        borderBottom:i<favStrategies.length-1?`1px solid ${C.border}`:"none",
                         cursor:"pointer"
                       }}
                         onMouseEnter={e=>e.currentTarget.style.background=C.cardHover}
                         onMouseLeave={e=>e.currentTarget.style.background=foForm.strategy===s?C.redSoft:"transparent"}>
-                        <span style={{ fontSize:13, color:foForm.strategy===s?C.red:C.text, fontWeight:foForm.strategy===s?600:400 }}>{s}</span>
-                        <span onClick={e=>{e.stopPropagation();toggleFavStrategy(s);}} style={{ fontSize:13, cursor:"pointer", color:C.textSec }}>✕</span>
+                        <span>{s}</span>
+                        <span onClick={e=>{e.stopPropagation();toggleFavStrategy(s);}} style={{ fontSize:12, color:C.textSec, cursor:"pointer", padding:"2px 6px" }}>✕</span>
                       </div>
                     ))}
                   </div>
@@ -1626,23 +1676,37 @@ export default function App() {
 
   // Check if user is already logged in (session persists across page refresh)
   useEffect(()=>{
+    // ── IMMEDIATELY check URL hash for password recovery ──
+    const hash = window.location.hash;
+    const params = new URLSearchParams(hash.replace("#","?"));
+    const isRecovery = params.get("type") === "recovery";
+    const accessToken = params.get("access_token");
+
+    if(isRecovery && accessToken) {
+      // Set session from URL tokens then show reset screen
+      supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: params.get("refresh_token") || ""
+      }).then(()=>{
+        setScreen("resetPassword");
+        window.history.replaceState(null,"",window.location.pathname);
+      });
+      return;
+    }
+
     supabase.auth.getSession().then(({ data:{ session } })=>{
       if(session){
         const name = session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "Trader";
         setUser({ name, id:session.user.id });
-        // Check if this is a password recovery session
-        const hash = window.location.hash;
-        if(hash.includes("type=recovery")) {
-          setScreen("resetPassword");
-        } else {
-          setScreen("app");
-          loadTrades(session.user.id);
-        }
+        setScreen("app");
+        loadTrades(session.user.id);
       }
     });
     const { data:{ subscription } } = supabase.auth.onAuthStateChange((event, session)=>{
       if(event === "PASSWORD_RECOVERY") {
         setScreen("resetPassword");
+      } else if(event === "SIGNED_IN" && screen === "resetPassword") {
+        // stay on reset screen
       } else if(!session) {
         setScreen("landing"); setUser({ name:"", id:"" }); setTrades([]);
       }

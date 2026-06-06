@@ -31,6 +31,76 @@ const LIGHT_THEME = {
 
 let C = { ...DARK_THEME };
 
+/* ─── TRADING MODE CONFIG ─── */
+// "fo"    = F&O mode  (NSE/BSE derivatives — NIFTY, BANKNIFTY, etc.)
+// "forex" = Forex/CFD mode (global FX & commodities)
+
+const TRADING_MODES = {
+  fo: {
+    id: "fo",
+    label: "F&O",
+    fullLabel: "Futures & Options",
+    accent: "#4a9eff",
+    accentSoft: "rgba(74,158,255,0.12)",
+    accentBorder: "rgba(74,158,255,0.3)",
+    icon: "📊",
+    description: "NSE / BSE derivatives",
+    defaultCurrency: "INR",
+    defaultSymbols: ["NIFTY","BANKNIFTY","FINNIFTY","SENSEX","MIDCPNIFTY"],
+    defaultStrategies: ["Option Buy","Option Sell","Straddle","Strangle","Iron Condor","Bull Call Spread","Bear Put Spread","Scalp","Trend Follow","Other"],
+    logTradeLabel: "Log F&O Trade",
+    historyLabel: "F&O History",
+    sidebarExtra: "Expiry Calendar",
+  },
+  forex: {
+    id: "forex",
+    label: "Forex",
+    fullLabel: "Forex / CFD",
+    accent: "#1fd07a",
+    accentSoft: "rgba(31,208,122,0.1)",
+    accentBorder: "rgba(31,208,122,0.3)",
+    icon: "💱",
+    description: "Global FX & commodities",
+    defaultCurrency: "USD",
+    defaultSymbols: ["EURUSD","GBPUSD","XAUUSD","USDJPY","BTCUSD","ETHUSD"],
+    defaultStrategies: ["Trend Follow","Reversal","Breakout","Scalp","Swing","Price Action","News Trade","Other"],
+    logTradeLabel: "Log Forex Trade",
+    historyLabel: "Forex History",
+    sidebarExtra: "Session Tracker",
+  },
+};
+
+/* ─── NSE LOT SIZES ─── */
+const NSE_LOT_SIZES = {
+  NIFTY: 75, BANKNIFTY: 30, FINNIFTY: 65, SENSEX: 20,
+  MIDCPNIFTY: 120, NIFTYNXT50: 25,
+};
+
+/* ─── NSE EXPIRY HELPER ─── */
+function getNextThursdayExpiry() {
+  const today = new Date();
+  const day = today.getDay();
+  const daysUntilThursday = (4 - day + 7) % 7 || 7;
+  const next = new Date(today);
+  next.setDate(today.getDate() + daysUntilThursday);
+  return next.toISOString().split("T")[0];
+}
+
+function getExpiryOptions() {
+  const today = new Date();
+  const options = [];
+  for (let i = 0; i < 4; i++) {
+    const d = new Date(today);
+    const day = d.getDay();
+    const daysUntil = ((4 - day + 7) % 7) + i * 7 || 7 + i * 7;
+    d.setDate(today.getDate() + (i === 0 ? ((4 - day + 7) % 7 || 7) : ((4 - day + 7) % 7 || 7) + i * 7));
+    const label = d.toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"2-digit" });
+    const isMonthly = d.getDate() >= 25;
+    options.push({ value: d.toISOString().split("T")[0], label: `${label} (${isMonthly ? "Monthly" : "Weekly"})` });
+  }
+  return options;
+}
+
 /* ─── UTILS ─── */
 const fmt = (n) => (n >= 0 ? "+" : "") + n.toLocaleString("en-IN");
 
@@ -69,6 +139,22 @@ function Logo({ size = "md" }) {
   );
 }
 
+/* ─── TRADING MODE BADGE ─── */
+function ModeBadge({ tradingMode }) {
+  const mode = TRADING_MODES[tradingMode];
+  return (
+    <div style={{
+      display:"inline-flex", alignItems:"center", gap:5,
+      background: mode.accentSoft,
+      border: `1px solid ${mode.accentBorder}`,
+      borderRadius:6, padding:"2px 8px",
+      fontSize:11, fontWeight:700, color: mode.accent,
+    }}>
+      {mode.icon} {mode.label}
+    </div>
+  );
+}
+
 /* ─── STAT CARD ─── */
 function StatCard({ label, value, sub, color, icon: Icon }) {
   return (
@@ -84,11 +170,11 @@ function StatCard({ label, value, sub, color, icon: Icon }) {
 }
 
 /* ═══════════════════════════════════════
-   AUTH PAGE — REAL SUPABASE LOGIN
+   AUTH PAGE
 ═══════════════════════════════════════ */
 function AuthPage({ onLogin, onBack }) {
   const [isLogin, setIsLogin]       = useState(true);
-  const [step, setStep]             = useState("form"); // "form" | "otp" | "forgot" | "forgot-sent"
+  const [step, setStep]             = useState("form");
   const [name, setName]             = useState("");
   const [email, setEmail]           = useState("");
   const [pass, setPass]             = useState("");
@@ -127,13 +213,11 @@ function AuthPage({ onLogin, onBack }) {
         const displayName = data.user.user_metadata?.full_name || email.split("@")[0];
         onLogin(displayName, data.user.id);
       } else {
-        // SIGN UP → send OTP
         const { data, error } = await supabase.auth.signUp({
           email, password: pass,
           options: { data: { full_name: name } }
         });
         if (error) throw error;
-        // Move to OTP step
         setStep("otp");
         setMessage("");
       }
@@ -149,11 +233,8 @@ function AuthPage({ onLogin, onBack }) {
     if (token.length < 6) { setError("Please enter the full 6-digit code."); return; }
     setError(""); setLoading(true);
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email, token, type:"signup"
-      });
+      const { data, error } = await supabase.auth.verifyOtp({ email, token, type:"signup" });
       if (error) {
-        // If already confirmed, try logging in directly
         if (error.message.includes("already confirmed") || error.message.includes("expired")) {
           const { data:loginData, error:loginErr } = await supabase.auth.signInWithPassword({ email, password: pass });
           if (loginErr) throw loginErr;
@@ -188,9 +269,7 @@ function AuthPage({ onLogin, onBack }) {
     if (!email) { setError("Please enter your email address first."); return; }
     setError(""); setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin
-      });
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
       if (error) throw error;
       setStep("forgot-sent");
     } catch (err) {
@@ -217,52 +296,27 @@ function AuthPage({ onLogin, onBack }) {
           {error && <div style={{ background:"rgba(230,57,70,0.1)", border:`1px solid ${C.redBorder}`, borderRadius:8, padding:"0.7rem 1rem", marginBottom:16, fontSize:13, color:C.red }}>{error}</div>}
           {message && <div style={{ background:C.greenSoft, border:"1px solid rgba(31,208,122,0.3)", borderRadius:8, padding:"0.7rem 1rem", marginBottom:16, fontSize:13, color:C.green }}>{message}</div>}
 
-          {/* ── OTP STEP ── */}
           {step==="otp" ? (
             <>
               <div style={{ marginBottom:24 }}>
                 <label style={lbl}>Enter 6-digit verification code</label>
                 <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
                   {otp.map((digit, idx) => (
-                    <input
-                      key={idx}
-                      ref={otpRefs[idx]}
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={1}
-                      value={digit}
-                      onChange={e => handleOtpChange(e.target.value, idx)}
-                      onKeyDown={e => handleOtpKeyDown(e, idx)}
-                      style={{
-                        width:52, height:58, textAlign:"center", fontSize:24, fontWeight:700,
-                        background:C.surface, border:`2px solid ${digit ? C.red : C.border}`,
-                        borderRadius:10, color:C.text, outline:"none", fontFamily:"monospace",
-                        transition:"border-color 0.2s"
-                      }}
-                    />
+                    <input key={idx} ref={otpRefs[idx]} type="text" inputMode="numeric" maxLength={1} value={digit}
+                      onChange={e => handleOtpChange(e.target.value, idx)} onKeyDown={e => handleOtpKeyDown(e, idx)}
+                      style={{ width:52, height:58, textAlign:"center", fontSize:24, fontWeight:700, background:C.surface, border:`2px solid ${digit ? C.red : C.border}`, borderRadius:10, color:C.text, outline:"none", fontFamily:"monospace", transition:"border-color 0.2s" }}/>
                   ))}
                 </div>
                 <div style={{ textAlign:"center", marginTop:12, fontSize:12, color:C.textSec }}>
                   Didn't receive it?{" "}
-                  <span onClick={handleResendOtp} style={{ color:C.red, cursor:"pointer", fontWeight:600 }}>
-                    Resend code
-                  </span>
+                  <span onClick={handleResendOtp} style={{ color:C.red, cursor:"pointer", fontWeight:600 }}>Resend code</span>
                 </div>
               </div>
-
-              <button onClick={handleVerifyOtp} disabled={loading} style={{
-                width:"100%", background:loading?"#333":C.red, color:"#fff", border:"none",
-                borderRadius:9, padding:"0.8rem", fontWeight:700, cursor:loading?"not-allowed":"pointer",
-                fontSize:15, fontFamily:"inherit"
-              }}>
+              <button onClick={handleVerifyOtp} disabled={loading} style={{ width:"100%", background:loading?"#333":C.red, color:"#fff", border:"none", borderRadius:9, padding:"0.8rem", fontWeight:700, cursor:loading?"not-allowed":"pointer", fontSize:15, fontFamily:"inherit" }}>
                 {loading ? "Verifying..." : "Verify & Enter Dashboard →"}
               </button>
-
               <div style={{ textAlign:"center", marginTop:"1.25rem" }}>
-                <span onClick={()=>{ setStep("form"); setOtp(["","","","","",""]); setError(""); }}
-                  style={{ fontSize:13, color:C.textSec, cursor:"pointer" }}>
-                  ← Back to signup
-                </span>
+                <span onClick={()=>{ setStep("form"); setOtp(["","","","","",""]); setError(""); }} style={{ fontSize:13, color:C.textSec, cursor:"pointer" }}>← Back to signup</span>
               </div>
             </>
           ) : step==="forgot" ? (
@@ -271,7 +325,6 @@ function AuthPage({ onLogin, onBack }) {
                 <label style={lbl}>Email Address</label>
                 <input style={inp} type="email" placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleForgotPassword()}/>
               </div>
-              {error && <div style={{ background:"rgba(230,57,70,0.1)", border:`1px solid ${C.redBorder}`, borderRadius:8, padding:"0.7rem 1rem", marginBottom:16, fontSize:13, color:C.red }}>{error}</div>}
               <button onClick={handleForgotPassword} disabled={loading} style={{ width:"100%", background:loading?"#333":C.red, color:"#fff", border:"none", borderRadius:9, padding:"0.8rem", fontWeight:700, cursor:loading?"not-allowed":"pointer", fontSize:15, fontFamily:"inherit" }}>
                 {loading ? "Sending..." : "Send Reset Link →"}
               </button>
@@ -296,7 +349,6 @@ function AuthPage({ onLogin, onBack }) {
             </>
           ) : (
             <>
-              {/* ── SIGNUP/LOGIN FORM ── */}
               {!isLogin && (
                 <div style={{ marginBottom:16 }}>
                   <label style={lbl}>Full Name</label>
@@ -310,8 +362,7 @@ function AuthPage({ onLogin, onBack }) {
               <div style={{ marginBottom: isLogin ? 8 : 24 }}>
                 <label style={lbl}>Password</label>
                 <div style={{ position:"relative" }}>
-                  <input style={{ ...inp, paddingRight:44 }} type={showPass?"text":"password"} placeholder="min. 6 characters"
-                    value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
+                  <input style={{ ...inp, paddingRight:44 }} type={showPass?"text":"password"} placeholder="min. 6 characters" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
                   <button onClick={()=>setShowPass(v=>!v)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:C.textSec }}>
                     {showPass?<EyeOff size={16}/>:<Eye size={16}/>}
                   </button>
@@ -319,33 +370,21 @@ function AuthPage({ onLogin, onBack }) {
               </div>
               {isLogin && (
                 <div style={{ textAlign:"right", marginBottom:20 }}>
-                  <span onClick={()=>{ setStep("forgot"); setError(""); }} style={{ fontSize:12, color:C.red, cursor:"pointer", fontWeight:600 }}>
-                    Forgot password?
-                  </span>
+                  <span onClick={()=>{ setStep("forgot"); setError(""); }} style={{ fontSize:12, color:C.red, cursor:"pointer", fontWeight:600 }}>Forgot password?</span>
                 </div>
               )}
-
-              <button onClick={handleSubmit} disabled={loading} style={{
-                width:"100%", background:loading?"#333":C.red, color:"#fff", border:"none",
-                borderRadius:9, padding:"0.8rem", fontWeight:700, cursor:loading?"not-allowed":"pointer",
-                fontSize:15, fontFamily:"inherit"
-              }}>
+              <button onClick={handleSubmit} disabled={loading} style={{ width:"100%", background:loading?"#333":C.red, color:"#fff", border:"none", borderRadius:9, padding:"0.8rem", fontWeight:700, cursor:loading?"not-allowed":"pointer", fontSize:15, fontFamily:"inherit" }}>
                 {loading ? "Please wait..." : isLogin ? "Login to Dashboard →" : "Create Account →"}
               </button>
-
               <div style={{ textAlign:"center", marginTop:"1.25rem" }}>
-                <span style={{ fontSize:13, color:C.textSec }}>
-                  {isLogin ? "Don't have an account? " : "Already have an account? "}
-                </span>
-                <span onClick={()=>{ setIsLogin(v=>!v); setError(""); setMessage(""); }}
-                  style={{ fontSize:13, color:C.red, cursor:"pointer", fontWeight:600 }}>
+                <span style={{ fontSize:13, color:C.textSec }}>{isLogin ? "Don't have an account? " : "Already have an account? "}</span>
+                <span onClick={()=>{ setIsLogin(v=>!v); setError(""); setMessage(""); }} style={{ fontSize:13, color:C.red, cursor:"pointer", fontWeight:600 }}>
                   {isLogin ? "Sign up free" : "Log in"}
                 </span>
               </div>
             </>
           )}
         </div>
-
         <div style={{ textAlign:"center", marginTop:"1rem" }}>
           <span onClick={onBack} style={{ fontSize:13, color:C.textSec, cursor:"pointer" }}>← Back to homepage</span>
         </div>
@@ -355,7 +394,7 @@ function AuthPage({ onLogin, onBack }) {
 }
 
 /* ═══════════════════════════════════════
-   LANDING PAGE
+   LANDING PAGE + TRADINGVIEW WIDGETS
 ═══════════════════════════════════════ */
 function TradingViewTicker() {
   const ref = useRef(null);
@@ -373,11 +412,7 @@ function TradingViewTicker() {
         { proName:"NSE:BANKNIFTY",  title:"Bank Nifty" },
         { proName:"OANDA:EURUSD",   title:"EUR/USD"    },
       ],
-      showSymbolLogo: true,
-      isTransparent: true,
-      displayMode: "adaptive",
-      colorTheme: "dark",
-      locale: "en"
+      showSymbolLogo: true, isTransparent: true, displayMode: "adaptive", colorTheme: "dark", locale: "en"
     });
     ref.current.appendChild(script);
   }, []);
@@ -396,28 +431,17 @@ function TradingViewMarket() {
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-market-overview.js";
     script.async = true;
     script.innerHTML = JSON.stringify({
-      colorTheme: "dark",
-      dateRange: "1D",
-      showChart: false,
-      locale: "en",
-      isTransparent: true,
-      showSymbolLogo: true,
-      showFloatingTooltip: false,
-      width: "100%",
-      height: 200,
-      tabs: [
-        {
-          title: "Markets",
-          symbols: [
-            { s:"OANDA:XAUUSD",   d:"Gold"       },
-            { s:"OANDA:XAGUSD",   d:"Silver"     },
-            { s:"COINBASE:BTCUSD",d:"Bitcoin"    },
-            { s:"NSE:NIFTY50",    d:"Nifty 50"   },
-            { s:"NSE:BANKNIFTY",  d:"Bank Nifty" },
-            { s:"OANDA:EURUSD",   d:"EUR/USD"    },
-          ]
-        }
-      ]
+      colorTheme:"dark", dateRange:"1D", showChart:false, locale:"en",
+      isTransparent:true, showSymbolLogo:true, showFloatingTooltip:false,
+      width:"100%", height:200,
+      tabs:[{ title:"Markets", symbols:[
+        { s:"OANDA:XAUUSD",   d:"Gold"       },
+        { s:"OANDA:XAGUSD",   d:"Silver"     },
+        { s:"COINBASE:BTCUSD",d:"Bitcoin"    },
+        { s:"NSE:NIFTY50",    d:"Nifty 50"   },
+        { s:"NSE:BANKNIFTY",  d:"Bank Nifty" },
+        { s:"OANDA:EURUSD",   d:"EUR/USD"    },
+      ]}]
     });
     ref.current.appendChild(script);
   }, []);
@@ -426,14 +450,6 @@ function TradingViewMarket() {
       <div className="tradingview-widget-container__widget"></div>
     </div>
   );
-}
-
-function PriceTicker() {
-  return <TradingViewTicker />;
-}
-
-function PriceCards({ prices }) {
-  return <TradingViewMarket />;
 }
 
 function LandingPage({ onGetStarted }) {
@@ -453,7 +469,6 @@ function LandingPage({ onGetStarted }) {
 
   return (
     <div style={{ background:C.bg, minHeight:"100vh", color:C.text, fontFamily:"sans-serif" }}>
-      {/* NAV */}
       <nav style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"1.1rem 3rem", borderBottom:`1px solid ${C.border}`, position:"sticky", top:0, background:"rgba(7,9,12,0.92)", backdropFilter:"blur(12px)", zIndex:100 }}>
         <Logo />
         <div style={{ display:"flex", gap:12 }}>
@@ -461,11 +476,7 @@ function LandingPage({ onGetStarted }) {
           <button onClick={onGetStarted} style={{ background:C.red, color:"#fff", border:"none", borderRadius:8, padding:"0.55rem 1.3rem", fontWeight:600, cursor:"pointer", fontSize:14 }}>Start Free →</button>
         </div>
       </nav>
-
-      {/* LIVE TICKER */}
-      <PriceTicker />
-
-      {/* HERO */}
+      <TradingViewTicker />
       <div style={{ textAlign:"center", padding:"6rem 2rem 5rem", background:`radial-gradient(ellipse 80% 50% at 50% -10%, rgba(230,57,70,0.15), transparent)` }}>
         <div style={{ display:"inline-block", background:C.redSoft, border:`1px solid ${C.redBorder}`, borderRadius:20, padding:"0.3rem 0.9rem", fontSize:12, color:C.red, marginBottom:"1.5rem", fontWeight:600, letterSpacing:"0.05em" }}>
           🚀 THE TRADER'S EDGE STARTS HERE
@@ -484,10 +495,7 @@ function LandingPage({ onGetStarted }) {
             View Demo Dashboard
           </button>
         </div>
-
-        {/* LIVE PRICE CARDS */}
-        <PriceCards />
-
+        <TradingViewMarket />
         <div style={{ marginTop:"2.5rem", display:"flex", gap:"2.5rem", justifyContent:"center", flexWrap:"wrap" }}>
           {[["10,000+","Traders"],["₹2Cr+","P&L Tracked"],["98%","Uptime"]].map(([v,l]) => (
             <div key={l} style={{ textAlign:"center" }}>
@@ -497,8 +505,6 @@ function LandingPage({ onGetStarted }) {
           ))}
         </div>
       </div>
-
-      {/* FEATURES */}
       <div style={{ padding:"5rem 3rem", maxWidth:1100, margin:"0 auto" }}>
         <div style={{ textAlign:"center", marginBottom:"3rem" }}>
           <h2 style={{ fontSize:"2rem", fontWeight:700, letterSpacing:"-0.02em", margin:"0 0 0.75rem" }}>Everything a serious trader needs</h2>
@@ -516,8 +522,6 @@ function LandingPage({ onGetStarted }) {
           ))}
         </div>
       </div>
-
-      {/* PRICING */}
       <div style={{ padding:"5rem 3rem", background:C.surface }}>
         <div style={{ maxWidth:900, margin:"0 auto" }}>
           <div style={{ textAlign:"center", marginBottom:"3rem" }}>
@@ -546,7 +550,6 @@ function LandingPage({ onGetStarted }) {
           </div>
         </div>
       </div>
-
       <div style={{ padding:"2rem 3rem", borderTop:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12 }}>
         <Logo size="sm"/>
         <div style={{ fontSize:13, color:C.textSec }}>© 2024 RedRain Traders · Built for Indian Markets 🇮🇳</div>
@@ -559,52 +562,63 @@ function LandingPage({ onGetStarted }) {
 /* ═══════════════════════════════════════
    SIDEBAR
 ═══════════════════════════════════════ */
-function Sidebar({ active, setActive, onLogout, userName, isOpen, onToggle }) {
+function Sidebar({ active, setActive, onLogout, userName, isOpen, onToggle, tradingMode }) {
+  const mode = TRADING_MODES[tradingMode];
   const NAV = [
-    { id:"dashboard",   icon:Home,          label:"Dashboard"     },
-    { id:"add",         icon:Plus,          label:"Log Trade"     },
-    { id:"history",     icon:BookOpen,      label:"Trade History" },
-    { id:"analytics",   icon:BarChart2,     label:"Analytics"     },
-    { id:"backtesting", icon:FlaskConical,  label:"Backtesting"   },
-    { id:"settings",    icon:Settings,      label:"Settings"      },
+    { id:"dashboard",   icon:Home,         label:"Dashboard"              },
+    { id:"add",         icon:Plus,         label: mode.logTradeLabel      },
+    { id:"history",     icon:BookOpen,     label: mode.historyLabel       },
+    { id:"analytics",   icon:BarChart2,    label:"Analytics"              },
+    { id:"backtesting", icon:FlaskConical, label:"Backtesting"            },
+    { id:"settings",    icon:Settings,     label:"Settings"               },
   ];
+
+  const modeAccent = mode.accent;
+  const modeAccentSoft = mode.accentSoft;
+
   return (
     <>
-      {/* COLLAPSED — just hamburger button */}
       {!isOpen && (
         <div style={{ width:52, background:C.surface, borderRight:`1px solid ${C.border}`, display:"flex", flexDirection:"column", alignItems:"center", padding:"1rem 0", gap:4, fontFamily:"sans-serif" }}>
           <button onClick={onToggle} style={{ background:"transparent", border:"none", cursor:"pointer", color:C.textSec, padding:"0.5rem", borderRadius:8, marginBottom:8 }}>
             <PanelLeft size={20}/>
           </button>
           {NAV.map(n => (
-            <button key={n.id} onClick={()=>{ setActive(n.id); }} title={n.label} style={{ background:active===n.id?C.redSoft:"transparent", border:"none", cursor:"pointer", color:active===n.id?C.red:C.textSec, padding:"0.65rem", borderRadius:9, width:40, display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <button key={n.id} onClick={()=>setActive(n.id)} title={n.label} style={{ background:active===n.id?modeAccentSoft:"transparent", border:"none", cursor:"pointer", color:active===n.id?modeAccent:C.textSec, padding:"0.65rem", borderRadius:9, width:40, display:"flex", alignItems:"center", justifyContent:"center" }}>
               <n.icon size={18}/>
             </button>
           ))}
         </div>
       )}
 
-      {/* OPEN SIDEBAR */}
       {isOpen && (
         <div style={{ width:220, background:C.surface, borderRight:`1px solid ${C.border}`, display:"flex", flexDirection:"column", padding:"1.25rem 0.75rem", fontFamily:"sans-serif", transition:"all 0.2s" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", paddingBottom:"1.25rem", borderBottom:`1px solid ${C.border}`, marginBottom:"1rem" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", paddingBottom:"1.25rem", borderBottom:`1px solid ${C.border}`, marginBottom:"0.75rem" }}>
             <Logo size="sm"/>
             <button onClick={onToggle} style={{ background:"transparent", border:"none", cursor:"pointer", color:C.textSec, padding:"0.3rem", borderRadius:6 }}>
               <PanelLeft size={16}/>
             </button>
           </div>
+
+          {/* MODE BADGE in sidebar */}
+          <div style={{ marginBottom:"0.75rem", paddingBottom:"0.75rem", borderBottom:`1px solid ${C.border}` }}>
+            <ModeBadge tradingMode={tradingMode} />
+          </div>
+
           <div style={{ flex:1, display:"flex", flexDirection:"column", gap:4 }}>
             {NAV.map(n => (
               <button key={n.id} onClick={() => setActive(n.id)} style={{
                 display:"flex", alignItems:"center", gap:10, padding:"0.65rem 0.85rem", borderRadius:9, border:"none",
-                background:active===n.id?C.redSoft:"transparent", color:active===n.id?C.red:C.textSec,
+                background: active===n.id ? modeAccentSoft : "transparent",
+                color: active===n.id ? modeAccent : C.textSec,
                 cursor:"pointer", fontWeight:active===n.id?600:400, fontSize:14, fontFamily:"inherit",
-                borderLeft:active===n.id?`2px solid ${C.red}`:"2px solid transparent"
+                borderLeft: active===n.id ? `2px solid ${modeAccent}` : "2px solid transparent"
               }}>
                 <n.icon size={16}/>{n.label}
               </button>
             ))}
           </div>
+
           <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:"1rem" }}>
             <div style={{ padding:"0.5rem 0.85rem", marginBottom:8 }}>
               <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{userName}</div>
@@ -620,13 +634,46 @@ function Sidebar({ active, setActive, onLogout, userName, isOpen, onToggle }) {
   );
 }
 
-const STRATEGIES = ["Trend Follow","Reversal","Breakout","Scalp","Earnings Play","Swing","Other"];
-const ASSETS = ["NIFTY","BANKNIFTY","RELIANCE","INFY","TCS","HDFC","WIPRO","ONGC","SBIN","ICICIBANK","Other"];
+/* ═══════════════════════════════════════
+   ASSET INPUT (shared)
+═══════════════════════════════════════ */
+function AssetInput({ value, onChange, favourites, onToggleFav }) {
+  const [open, setOpen] = React.useState(false);
+  const isFav = favourites.includes(value.trim().toUpperCase());
+  const inp = { background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, padding:"0.7rem 1rem", color:C.text, fontSize:14, outline:"none", width:"100%", boxSizing:"border-box", fontFamily:"inherit" };
+  return (
+    <div style={{ position:"relative" }}>
+      <div style={{ display:"flex", gap:8 }}>
+        <input style={{ ...inp, textTransform:"uppercase" }} placeholder="e.g. NIFTY, EURUSD, BTC..."
+          value={value} onChange={e => onChange(e.target.value.toUpperCase())} />
+        <button onClick={()=>favourites.length>0&&setOpen(v=>!v)} title={favourites.length>0?"Show saved symbols":"Save a symbol first"}
+          style={{ background:open?"rgba(74,158,255,0.12)":"rgba(74,158,255,0.06)", border:`1.5px solid ${open?"#4a9eff":"rgba(74,158,255,0.35)"}`, borderRadius:9, padding:"0 0.75rem", cursor:favourites.length>0?"pointer":"default", fontSize:13, flexShrink:0, color:open?"#4a9eff":"rgba(74,158,255,0.7)", fontWeight:700, opacity:favourites.length>0?1:0.5 }}>▼</button>
+        <button onClick={onToggleFav} title={isFav ? "Remove from favourites" : "Save to favourites"}
+          style={{ background:isFav?"rgba(245,166,35,0.2)":"rgba(245,166,35,0.06)", border:`1.5px solid ${isFav?"#f5a623":"rgba(245,166,35,0.4)"}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:18, flexShrink:0, color:"#f5a623" }}>
+          {isFav ? "⭐" : "☆"}
+        </button>
+      </div>
+      {open && favourites.length > 0 && (
+        <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:C.card, border:`1px solid ${C.border}`, borderRadius:10, zIndex:100, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
+          {favourites.map((f,i) => (
+            <div key={f} onClick={()=>{ onChange(f); setOpen(false); }}
+              style={{ padding:"0.65rem 1rem", fontSize:14, fontWeight:500, color:value===f?C.red:C.text, background:value===f?C.redSoft:"transparent", borderBottom:i<favourites.length-1?`1px solid ${C.border}`:"none", cursor:"pointer" }}
+              onMouseEnter={e=>e.currentTarget.style.background=C.cardHover}
+              onMouseLeave={e=>e.currentTarget.style.background=value===f?C.redSoft:"transparent"}>
+              {f}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ═══════════════════════════════════════
    DASHBOARD
 ═══════════════════════════════════════ */
-function DashboardView({ trades, setActive, userName, convertPnl, currSym }) {
+function DashboardView({ trades, setActive, userName, convertPnl, currSym, tradingMode }) {
+  const mode = TRADING_MODES[tradingMode];
   const cp = (pnl, t) => convertPnl ? convertPnl(pnl, t?.currency || "USD") : pnl;
   const stats = useMemo(() => {
     const converted = trades.map(t=>({...t, cpnl: cp(t.pnl, t)}));
@@ -641,12 +688,16 @@ function DashboardView({ trades, setActive, userName, convertPnl, currSym }) {
   }, [trades, convertPnl]);
 
   const recent = trades.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
+  const accentColor = mode.accent;
 
   return (
     <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1 }}>
-      <div style={{ marginBottom:"1.75rem" }}>
-        <h1 style={{ fontSize:"1.6rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Good day, {userName} 👋</h1>
-        <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Here's your trading performance overview.</p>
+      <div style={{ marginBottom:"1.75rem", display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:12 }}>
+        <div>
+          <h1 style={{ fontSize:"1.6rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Good day, {userName} 👋</h1>
+          <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Here's your {mode.fullLabel} performance overview.</p>
+        </div>
+        <ModeBadge tradingMode={tradingMode} />
       </div>
       <div style={{ marginBottom:20, borderRadius:12, overflow:"hidden", border:`1px solid ${C.border}` }}>
         <TradingViewTicker />
@@ -663,12 +714,12 @@ function DashboardView({ trades, setActive, userName, convertPnl, currSym }) {
           <div style={{ fontSize:14, fontWeight:600, color:C.text, marginBottom:16 }}>Equity Curve</div>
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={stats.equity}>
-              <defs><linearGradient id="eg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.red} stopOpacity={0.25}/><stop offset="100%" stopColor={C.red} stopOpacity={0}/></linearGradient></defs>
+              <defs><linearGradient id="eg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={accentColor} stopOpacity={0.25}/><stop offset="100%" stopColor={accentColor} stopOpacity={0}/></linearGradient></defs>
               <CartesianGrid strokeDasharray="3 3" stroke={C.textMuted} strokeOpacity={0.3}/>
               <XAxis dataKey="date" tick={{ fontSize:11, fill:C.textSec }} axisLine={false} tickLine={false}/>
-              <YAxis tick={{ fontSize:11, fill:C.textSec }} axisLine={false} tickLine={false} tickFormatter={v=>`₹${v}`}/>
+              <YAxis tick={{ fontSize:11, fill:C.textSec }} axisLine={false} tickLine={false} tickFormatter={v=>`${currSym}${v}`}/>
               <Tooltip formatter={v=>[`${currSym||"$"}${v.toLocaleString()}`,"P&L"]}/>
-              <Area type="monotone" dataKey="value" stroke={C.red} strokeWidth={2} fill="url(#eg)" dot={false}/>
+              <Area type="monotone" dataKey="value" stroke={accentColor} strokeWidth={2} fill="url(#eg)" dot={false}/>
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -677,11 +728,11 @@ function DashboardView({ trades, setActive, userName, convertPnl, currSym }) {
       <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"1.5rem" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
           <div style={{ fontSize:14, fontWeight:600, color:C.text }}>Recent Trades</div>
-          <span onClick={()=>setActive("history")} style={{ fontSize:12, color:C.red, cursor:"pointer" }}>View all →</span>
+          <span onClick={()=>setActive("history")} style={{ fontSize:12, color:accentColor, cursor:"pointer" }}>View all →</span>
         </div>
         {recent.length === 0 ? (
           <div style={{ textAlign:"center", color:C.textSec, fontSize:14, padding:"2rem" }}>
-            No trades yet. <span onClick={()=>setActive("add")} style={{ color:C.red, cursor:"pointer" }}>Log your first trade →</span>
+            No trades yet. <span onClick={()=>setActive("add")} style={{ color:accentColor, cursor:"pointer" }}>Log your first {mode.label} trade →</span>
           </div>
         ) : recent.map(t => (
           <div key={t.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"0.75rem 0.9rem", background:C.cardHover, borderRadius:10, border:`1px solid ${C.border}`, marginBottom:8 }}>
@@ -692,7 +743,9 @@ function DashboardView({ trades, setActive, userName, convertPnl, currSym }) {
                 <div style={{ fontSize:11, color:C.textSec }}>{t.date} · {t.strategy}</div>
               </div>
             </div>
-            <div style={{ fontSize:15, fontWeight:700, fontFamily:"monospace", color:t.pnl>=0?C.green:C.red }}>{t.pnl>=0?"+":""}{currSym||"$"}{Math.abs(convertPnl?convertPnl(t.pnl,t.currency||"USD"):t.pnl).toLocaleString()}</div>
+            <div style={{ fontSize:15, fontWeight:700, fontFamily:"monospace", color:t.pnl>=0?C.green:C.red }}>
+              {t.pnl>=0?"+":""}{currSym||"$"}{Math.abs(convertPnl?convertPnl(t.pnl,t.currency||"USD"):t.pnl).toLocaleString()}
+            </div>
           </div>
         ))}
       </div>
@@ -701,130 +754,87 @@ function DashboardView({ trades, setActive, userName, convertPnl, currSym }) {
 }
 
 /* ═══════════════════════════════════════
-   ADD TRADE
+   ADD TRADE — F&O MODE
 ═══════════════════════════════════════ */
-const CURRENCIES = [
-  { code:"USD", symbol:"$" },
-  { code:"INR", symbol:"₹" },
-  { code:"EUR", symbol:"€" },
-];
-
-function AssetInput({ value, onChange, favourites, onToggleFav }) {
-  const [open, setOpen] = React.useState(false);
-  const isFav = favourites.includes(value.trim().toUpperCase());
-  const inp = { background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, padding:"0.7rem 1rem", color:C.text, fontSize:14, outline:"none", width:"100%", boxSizing:"border-box", fontFamily:"inherit" };
-  return (
-    <div style={{ position:"relative" }}>
-      <div style={{ display:"flex", gap:8 }}>
-        <input style={{ ...inp, textTransform:"uppercase" }} placeholder="e.g. EURUSD, GOLD, BTC, NIFTY..."
-          value={value} onChange={e => onChange(e.target.value.toUpperCase())} />
-        <button onClick={()=>favourites.length>0&&setOpen(v=>!v)}
-          title={favourites.length>0?"Show saved symbols":"Save a symbol first"}
-          style={{ background:open?"rgba(74,158,255,0.12)":"rgba(74,158,255,0.06)", border:`1.5px solid ${open?"#4a9eff":"rgba(74,158,255,0.35)"}`, borderRadius:9, padding:"0 0.75rem", cursor:favourites.length>0?"pointer":"default", fontSize:13, flexShrink:0, color:open?"#4a9eff":"rgba(74,158,255,0.7)", fontWeight:700, opacity:favourites.length>0?1:0.5 }}>
-          ▼
-        </button>
-        <button onClick={onToggleFav} title={isFav ? "Remove from favourites" : "Save to favourites"}
-          style={{ background: isFav ? "rgba(245,166,35,0.2)" : "rgba(245,166,35,0.06)", border:`1.5px solid ${isFav ? "#f5a623" : "rgba(245,166,35,0.4)"}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:18, flexShrink:0, color:"#f5a623" }}>
-          {isFav ? "⭐" : "☆"}
-        </button>
-      </div>
-      {open && favourites.length > 0 && (
-        <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:C.card, border:`1px solid ${C.border}`, borderRadius:10, zIndex:100, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
-          {favourites.map((f,i) => (
-            <div key={f} onClick={()=>{ onChange(f); setOpen(false); }} style={{
-              padding:"0.65rem 1rem", fontSize:14, fontWeight:500,
-              color: value===f ? C.red : C.text,
-              background: value===f ? C.redSoft : "transparent",
-              borderBottom: i<favourites.length-1 ? `1px solid ${C.border}` : "none",
-              cursor:"pointer"
-            }}
-              onMouseEnter={e=>e.currentTarget.style.background=C.cardHover}
-              onMouseLeave={e=>e.currentTarget.style.background=value===f?C.redSoft:"transparent"}>
-              {f}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AddTradeView({ onAdd, userId }) {
-  const [tradeMode, setTradeMode] = useState("cfd");
-  const blankCfd = { date:"", asset:"", type:"Long", entry:"", exit:"", lotSize:"", sl:"", tp:"", pnl:"", currency:"USD", strategy:"Trend Follow", notes:"" };
-  const blankFo  = { date:"", asset:"", instrument:"Futures", type:"Long", entry:"", exit:"", qty:"", sl:"", tp:"", pnl:"", currency:"USD", strategy:"Trend Follow", notes:"" };
-  const [cfdForm,  setCfdForm]  = useState(blankCfd);
-  const [foForm,   setFoForm]   = useState(blankFo);
-  const [success, setSuccess]   = useState(false);
-  const [saving,  setSaving]    = useState(false);
+function AddFOTradeView({ onAdd, userId }) {
+  const mode = TRADING_MODES["fo"];
+  const blankForm = {
+    date:"", asset:"", instrument:"Options", optionType:"CE", buySell:"Buy",
+    strike:"", expiry:"", entry:"", exit:"", qty:"1",
+    sl:"", tp:"", pnl:"", currency:"INR",
+    strategy:"Option Buy", notes:"", iv:"", delta:""
+  };
+  const [form, setForm]       = useState(blankForm);
+  const [success, setSuccess] = useState(false);
+  const [saving, setSaving]   = useState(false);
   const [favourites, setFavourites] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("rr_fav_assets") || "[]"); } catch { return []; }
+    try { return JSON.parse(localStorage.getItem("rr_fav_assets_fo") || '["NIFTY","BANKNIFTY","FINNIFTY"]'); } catch { return ["NIFTY","BANKNIFTY","FINNIFTY"]; }
   });
-  const [favStrategies, setFavStrategies] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("rr_fav_strategies") || '["Trend Follow","Reversal","Breakout","Scalp"]'); } catch { return ["Trend Follow","Reversal","Breakout","Scalp"]; }
-  });
-  const [cfdStratOpen, setCfdStratOpen] = useState(false);
-  const [foStratOpen,  setFoStratOpen]  = useState(false);
 
-  const setCfd = (k,v) => setCfdForm(f=>({...f,[k]:v}));
-  const setFo  = (k,v) => setFoForm(f=>({...f,[k]:v}));
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
 
   const toggleFav = (asset) => {
     const a = asset.trim().toUpperCase();
     if (!a) return;
     const updated = favourites.includes(a) ? favourites.filter(x=>x!==a) : [...favourites, a];
     setFavourites(updated);
-    localStorage.setItem("rr_fav_assets", JSON.stringify(updated));
+    localStorage.setItem("rr_fav_assets_fo", JSON.stringify(updated));
   };
 
-  const toggleFavStrategy = (strategy) => {
-    const s = strategy.trim();
-    if (!s) return;
-    const updated = favStrategies.includes(s)
-      ? favStrategies.filter(x => x !== s)
-      : [...favStrategies, s];
-    setFavStrategies(updated);
-    localStorage.setItem("rr_fav_strategies", JSON.stringify(updated));
-  };
+  const lotSize = NSE_LOT_SIZES[form.asset] || 50;
+  const lots = parseFloat(form.qty) || 0;
+  const totalQty = Math.round(lots * lotSize);
 
-  const currSymbol = (code) => CURRENCIES.find(c=>c.code===code)?.symbol || "$";
+  const entryNum = parseFloat(form.entry) || 0;
+  const exitNum  = parseFloat(form.exit) || 0;
+  const autoPnl  = form.instrument === "Options"
+    ? (form.buySell === "Buy"
+        ? (exitNum - entryNum) * totalQty
+        : (entryNum - exitNum) * totalQty)
+    : (form.buySell === "Buy"
+        ? (exitNum - entryNum) * totalQty
+        : (entryNum - exitNum) * totalQty);
+  const showAutoPnl = entryNum > 0 && exitNum > 0 && totalQty > 0;
+
+  const expiryOptions = getExpiryOptions();
 
   const handleSubmit = async () => {
-    const f = tradeMode==="cfd" ? cfdForm : foForm;
-    const qty = tradeMode==="cfd" ? f.lotSize : f.qty;
-    if(!f.date||!f.asset||!f.entry||!f.exit||!qty||f.pnl==="") {
+    if (!form.date || !form.asset || !form.entry || !form.exit || !form.qty || form.pnl === "") {
       alert("Please fill in all required fields including Actual P&L!");
       return;
     }
     setSaving(true);
-    const manualPnl = parseFloat(f.pnl);
+    const manualPnl = parseFloat(form.pnl);
     const trade = {
-      date: f.date,
-      asset: f.asset.trim().toUpperCase(),
-      type: f.type,
-      entry: parseFloat(f.entry),
-      exit: parseFloat(f.exit),
-      qty: Math.abs(parseFloat(qty)),
-      strategy: f.strategy,
-      notes: f.notes || "",
-      currency: f.currency,
-      trade_mode: tradeMode,
-      instrument: f.instrument || null,
-      sl: f.sl ? parseFloat(f.sl) : null,
-      tp: f.tp ? parseFloat(f.tp) : null,
+      date: form.date,
+      asset: form.asset.trim().toUpperCase(),
+      type: form.buySell === "Buy" ? "Long" : "Short",
+      entry: parseFloat(form.entry),
+      exit: parseFloat(form.exit),
+      qty: Math.abs(parseFloat(form.qty)),
+      strategy: form.strategy,
+      notes: form.notes || "",
+      currency: form.currency,
+      trade_mode: "fo",
+      instrument: form.instrument,
+      sl: form.sl ? parseFloat(form.sl) : null,
+      tp: form.tp ? parseFloat(form.tp) : null,
       pnl: isNaN(manualPnl) ? 0 : manualPnl,
       user_id: userId,
+      // F&O specific extra fields stored in notes as JSON prefix
+      strike_price: form.strike || null,
+      expiry_date: form.expiry || null,
+      option_type: form.instrument === "Options" ? form.optionType : null,
+      iv: form.iv || null,
+      delta: form.delta || null,
     };
     const { data, error } = await supabase.from("trades").insert([trade]).select().single();
     setSaving(false);
-    if(error) {
-      alert("Error saving trade: " + error.message);
-      return;
-    }
-    if(data) {
+    if (error) { alert("Error saving trade: " + error.message); return; }
+    if (data) {
       onAdd(data);
       setSuccess(true);
-      tradeMode==="cfd" ? setCfdForm(blankCfd) : setFoForm(blankFo);
+      setForm(blankForm);
       setTimeout(()=>setSuccess(false), 3000);
     }
   };
@@ -832,243 +842,176 @@ function AddTradeView({ onAdd, userId }) {
   const inp = { background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, padding:"0.7rem 1rem", color:C.text, fontSize:14, outline:"none", width:"100%", boxSizing:"border-box", fontFamily:"inherit" };
   const lbl = { fontSize:13, color:C.textSec, marginBottom:6, display:"block", fontWeight:500 };
   const row = { display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16 };
-  const sym = currSymbol(tradeMode==="cfd" ? cfdForm.currency : foForm.currency);
-  const activePnl = tradeMode==="cfd" ? cfdForm.pnl : foForm.pnl;
-  const pnlNum = parseFloat(activePnl);
+  const row3 = { display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:14, marginBottom:16 };
+
+  const btnToggle = (active, color) => ({
+    flex:1, padding:"0.65rem", border:`1px solid ${active?color:C.border}`, borderRadius:9,
+    background: active ? `${color}20` : "transparent",
+    color: active ? color : C.textSec,
+    fontWeight:600, cursor:"pointer", fontSize:13, fontFamily:"inherit"
+  });
 
   return (
     <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1 }}>
-      <div style={{ marginBottom:"1.75rem" }}>
-        <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Log a New Trade</h1>
-        <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Record every detail of your trade for better analysis.</p>
+      <div style={{ marginBottom:"1.75rem", display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+        <div>
+          <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Log F&O Trade</h1>
+          <p style={{ color:C.textSec, fontSize:14, margin:0 }}>NSE / BSE Futures & Options — NIFTY, BANKNIFTY, and more.</p>
+        </div>
+        <ModeBadge tradingMode="fo" />
       </div>
 
-      {/* TOGGLE */}
-      <div style={{ display:"flex", gap:0, marginBottom:24, background:C.surface, border:`1px solid ${C.border}`, borderRadius:10, padding:4, maxWidth:320, width:"100%" }}>
-        {[["cfd","CFD"],["fo","Futures & Options"]].map(([mode, label])=>(
-          <button key={mode} onClick={()=>setTradeMode(mode)} style={{
-            flex:1, padding:"0.6rem 1rem", borderRadius:8, border:"none",
-            background: tradeMode===mode ? C.red : "transparent",
-            color: tradeMode===mode ? "#fff" : C.textSec,
-            fontWeight:600, cursor:"pointer", fontSize:13, fontFamily:"inherit",
-            transition:"all 0.2s"
-          }}>{label}</button>
-        ))}
-      </div>
+      {success && <div style={{ background:C.greenSoft, border:"1px solid rgba(31,208,122,0.3)", borderRadius:10, padding:"0.85rem 1rem", marginBottom:20, color:C.green, fontSize:14, display:"flex", alignItems:"center", gap:8 }}><Check size={16}/> F&O trade saved! Dashboard updated.</div>}
 
-      {success && <div style={{ background:C.greenSoft, border:"1px solid rgba(31,208,122,0.3)", borderRadius:10, padding:"0.85rem 1rem", marginBottom:20, color:C.green, fontSize:14, display:"flex", alignItems:"center", gap:8 }}><Check size={16}/> Trade saved! Dashboard updated.</div>}
+      <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"1.75rem", maxWidth:700 }}>
 
-      <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"1.75rem", maxWidth:680 }}>
+        {/* DATE + SYMBOL */}
+        <div style={row}>
+          <div>
+            <label style={lbl}>Date</label>
+            <input type="date" style={{ ...inp, colorScheme:"dark" }} value={form.date} onChange={e=>set("date",e.target.value)}/>
+          </div>
+          <div>
+            <label style={lbl}>Symbol</label>
+            <AssetInput value={form.asset} onChange={v=>set("asset",v)} favourites={favourites} onToggleFav={()=>toggleFav(form.asset)}/>
+            {form.asset && NSE_LOT_SIZES[form.asset] && (
+              <div style={{ fontSize:11, color:"#4a9eff", marginTop:5 }}>
+                📦 Lot size: {NSE_LOT_SIZES[form.asset]} units · {lots} lot{lots!==1?"s":""} = {totalQty} qty
+              </div>
+            )}
+          </div>
+        </div>
 
-        {/* ── CFD FORM ── */}
-        {tradeMode==="cfd" && (
-          <>
-            <div style={row}>
-              <div>
-                <label style={lbl}>Date</label>
-                <div style={{ position:"relative" }}>
-                  <input type="date" style={{ ...inp, border:"1.5px solid #2a3a50", colorScheme:"dark", paddingRight:36 }} value={cfdForm.date} onChange={e=>setCfd("date",e.target.value)}/>
-                  <span style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", color:"#4a7ab5", fontSize:16, pointerEvents:"none" }}>📅</span>
-                </div>
-              </div>
-              <div>
-                <label style={lbl}>Asset / Symbol</label>
-                <AssetInput value={cfdForm.asset} onChange={v=>setCfd("asset",v)} favourites={favourites} onToggleFav={()=>toggleFav(cfdForm.asset)}/>
-              </div>
+        {/* INSTRUMENT + BUY/SELL */}
+        <div style={row}>
+          <div>
+            <label style={lbl}>Instrument</label>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={()=>set("instrument","Options")} style={btnToggle(form.instrument==="Options","#4a9eff")}>🎯 Options</button>
+              <button onClick={()=>set("instrument","Futures")} style={btnToggle(form.instrument==="Futures","#4a9eff")}>📊 Futures</button>
             </div>
-            <div style={row}>
-              <div>
-                <label style={lbl}>Direction</label>
-                <div style={{ display:"flex", gap:10 }}>
-                  {["Long","Short"].map(t=>(
-                    <button key={t} onClick={()=>setCfd("type",t)} style={{ flex:1, padding:"0.7rem", border:`1px solid ${cfdForm.type===t?(t==="Long"?C.green:C.red):C.border}`, borderRadius:9, background:cfdForm.type===t?(t==="Long"?C.greenSoft:C.redSoft):"transparent", color:cfdForm.type===t?(t==="Long"?C.green:C.red):C.textSec, fontWeight:600, cursor:"pointer", fontSize:14, fontFamily:"inherit" }}>
-                      {t==="Long"?"📈 Long":"📉 Short"}
-                    </button>
-                  ))}
-                </div>
-              </div>
+          </div>
+          <div>
+            <label style={lbl}>Buy / Sell</label>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={()=>set("buySell","Buy")} style={btnToggle(form.buySell==="Buy",C.green)}>📈 Buy</button>
+              <button onClick={()=>set("buySell","Sell")} style={btnToggle(form.buySell==="Sell",C.red)}>📉 Sell</button>
+            </div>
+          </div>
+        </div>
 
+        {/* OPTIONS FIELDS — only shown when instrument = Options */}
+        {form.instrument === "Options" && (
+          <div style={row3}>
+            <div>
+              <label style={lbl}>Strike Price (₹)</label>
+              <input type="number" style={inp} placeholder="24000" value={form.strike} onChange={e=>set("strike",e.target.value)}/>
             </div>
-            <div style={row}>
-              <div><label style={lbl}>Entry Price ({sym})</label><input type="number" style={inp} placeholder="1.2050" value={cfdForm.entry} onChange={e=>setCfd("entry",e.target.value)}/></div>
-              <div><label style={lbl}>Exit Price ({sym})</label><input type="number" style={inp} placeholder="1.2150" value={cfdForm.exit} onChange={e=>setCfd("exit",e.target.value)}/></div>
-            </div>
-            <div style={row}>
-              <div>
-                <label style={lbl}>Lot Size</label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  style={inp}
-                  placeholder="e.g. 0.01, 0.1, 1.5"
-                  value={cfdForm.lotSize}
-                  onKeyDown={e=>{ if(["-","e","E","+"].includes(e.key)) e.preventDefault(); }}
-                  onChange={e=>{
-                    const v = e.target.value;
-                    if(v === "" || /^\d*\.?\d{0,2}$/.test(v)) setCfd("lotSize", v);
-                  }}
-                />
-              </div>
-              <div style={{ position:"relative" }}>
-                <label style={lbl}>Strategy</label>
-                <div style={{ display:"flex", gap:8 }}>
-                  <input style={{ ...inp }} placeholder="Type or pick strategy..." value={cfdForm.strategy} onChange={e=>setCfd("strategy",e.target.value)}/>
-                  <button onClick={()=>favStrategies.length>0&&setCfdStratOpen(v=>!v)}
-                    title={favStrategies.length>0?"Show saved strategies":"Save a strategy first"}
-                    style={{ background:cfdStratOpen?"rgba(74,158,255,0.12)":"rgba(74,158,255,0.06)", border:`1.5px solid ${cfdStratOpen?"#4a9eff":"rgba(74,158,255,0.35)"}`, borderRadius:9, padding:"0 0.75rem", cursor:favStrategies.length>0?"pointer":"default", fontSize:13, flexShrink:0, color:cfdStratOpen?"#4a9eff":"rgba(74,158,255,0.7)", fontWeight:700, opacity:favStrategies.length>0?1:0.5 }}>
-                    ▼
-                  </button>
-                  <button onClick={()=>toggleFavStrategy(cfdForm.strategy)}
-                    style={{ background:favStrategies.includes(cfdForm.strategy.trim())?"rgba(245,166,35,0.2)":"rgba(245,166,35,0.06)", border:`1.5px solid ${favStrategies.includes(cfdForm.strategy.trim())?"#f5a623":"rgba(245,166,35,0.4)"}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:18, flexShrink:0, color:"#f5a623" }}>
-                    {favStrategies.includes(cfdForm.strategy.trim()) ? "⭐" : "☆"}
-                  </button>
-                </div>
-                {cfdStratOpen && favStrategies.length > 0 && (
-                  <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:C.card, border:`1px solid ${C.border}`, borderRadius:10, zIndex:100, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
-                    {favStrategies.map((s,i)=>(
-                      <div key={s} onClick={()=>{ setCfd("strategy",s); setCfdStratOpen(false); }} style={{
-                        display:"flex", justifyContent:"space-between", alignItems:"center",
-                        padding:"0.65rem 1rem", fontSize:14,
-                        color:cfdForm.strategy===s?C.red:C.text,
-                        background:cfdForm.strategy===s?C.redSoft:"transparent",
-                        borderBottom:i<favStrategies.length-1?`1px solid ${C.border}`:"none",
-                        cursor:"pointer"
-                      }}
-                        onMouseEnter={e=>e.currentTarget.style.background=C.cardHover}
-                        onMouseLeave={e=>e.currentTarget.style.background=cfdForm.strategy===s?C.redSoft:"transparent"}>
-                        <span>{s}</span>
-                        <span onClick={e=>{e.stopPropagation();toggleFavStrategy(s);}} style={{ fontSize:12, color:C.textSec, cursor:"pointer", padding:"2px 6px" }}>✕</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            <div>
+              <label style={lbl}>Option Type</label>
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={()=>set("optionType","CE")} style={btnToggle(form.optionType==="CE","#4a9eff")}>CE</button>
+                <button onClick={()=>set("optionType","PE")} style={btnToggle(form.optionType==="PE","#f5a623")}>PE</button>
               </div>
             </div>
-            <div style={row}>
-              <div><label style={lbl}>Stop Loss — SL ({sym}) <span style={{color:C.textSec,fontWeight:400}}>(optional)</span></label><input type="number" min="0" style={inp} placeholder="e.g. 1.1950" value={cfdForm.sl} onChange={e=>setCfd("sl",e.target.value)}/></div>
-              <div><label style={lbl}>Take Profit — TP ({sym}) <span style={{color:C.textSec,fontWeight:400}}>(optional)</span></label><input type="number" min="0" style={inp} placeholder="e.g. 1.2300" value={cfdForm.tp} onChange={e=>setCfd("tp",e.target.value)}/></div>
+            <div>
+              <label style={lbl}>Expiry Date</label>
+              <select style={{ ...inp, cursor:"pointer" }} value={form.expiry} onChange={e=>set("expiry",e.target.value)}>
+                <option value="">Select expiry</option>
+                {expiryOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
             </div>
-          </>
+          </div>
         )}
 
-        {/* ── FUTURES & OPTIONS FORM ── */}
-        {tradeMode==="fo" && (
-          <>
-            <div style={row}>
-              <div>
-                <label style={lbl}>Date</label>
-                <div style={{ position:"relative" }}>
-                  <input type="date" style={{ ...inp, border:"1.5px solid #2a3a50", colorScheme:"dark", paddingRight:36 }} value={foForm.date} onChange={e=>setFo("date",e.target.value)}/>
-                  <span style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", color:"#4a7ab5", fontSize:16, pointerEvents:"none" }}>📅</span>
-                </div>
-              </div>
-              <div>
-                <label style={lbl}>Asset / Symbol</label>
-                <AssetInput value={foForm.asset} onChange={v=>setFo("asset",v)} favourites={favourites} onToggleFav={()=>toggleFav(foForm.asset)}/>
-              </div>
-            </div>
-            <div style={row}>
-              <div>
-                <label style={lbl}>Instrument</label>
-                <div style={{ display:"flex", gap:10 }}>
-                  {["Futures","Options"].map(inst=>(
-                    <button key={inst} onClick={()=>setFo("instrument",inst)} style={{ flex:1, padding:"0.7rem", border:`1px solid ${foForm.instrument===inst?C.blue:C.border}`, borderRadius:9, background:foForm.instrument===inst?"rgba(74,158,255,0.1)":"transparent", color:foForm.instrument===inst?C.blue:C.textSec, fontWeight:600, cursor:"pointer", fontSize:14, fontFamily:"inherit" }}>
-                      {inst==="Futures"?"📊 Futures":"🎯 Options"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label style={lbl}>Direction</label>
-                <div style={{ display:"flex", gap:10 }}>
-                  {["Long","Short"].map(t=>(
-                    <button key={t} onClick={()=>setFo("type",t)} style={{ flex:1, padding:"0.7rem", border:`1px solid ${foForm.type===t?(t==="Long"?C.green:C.red):C.border}`, borderRadius:9, background:foForm.type===t?(t==="Long"?C.greenSoft:C.redSoft):"transparent", color:foForm.type===t?(t==="Long"?C.green:C.red):C.textSec, fontWeight:600, cursor:"pointer", fontSize:14, fontFamily:"inherit" }}>
-                      {t==="Long"?"📈 Long":"📉 Short"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
+        {/* ENTRY / EXIT */}
+        <div style={row}>
+          <div>
+            <label style={lbl}>{form.instrument==="Options"?"Premium Entry (₹)":"Entry Price (₹)"}</label>
+            <input type="number" style={inp} placeholder={form.instrument==="Options"?"145.50":"22100"} value={form.entry} onChange={e=>set("entry",e.target.value)}/>
+          </div>
+          <div>
+            <label style={lbl}>{form.instrument==="Options"?"Premium Exit (₹)":"Exit Price (₹)"}</label>
+            <input type="number" style={inp} placeholder={form.instrument==="Options"?"210.00":"22340"} value={form.exit} onChange={e=>set("exit",e.target.value)}/>
+          </div>
+        </div>
 
-            <div style={row}>
-              <div><label style={lbl}>Entry Price ({sym})</label><input type="number" style={inp} placeholder="22100" value={foForm.entry} onChange={e=>setFo("entry",e.target.value)}/></div>
-              <div><label style={lbl}>Exit Price ({sym})</label><input type="number" style={inp} placeholder="22340" value={foForm.exit} onChange={e=>setFo("exit",e.target.value)}/></div>
-            </div>
-            <div style={row}>
-              <div><label style={lbl}>Quantity / Lots</label><input type="number" min="0" step="1" style={inp} placeholder="1" value={foForm.qty} onChange={e=>setFo("qty", Math.abs(e.target.value).toString())}/></div>
-              <div style={{ position:"relative" }}>
-                <label style={lbl}>Strategy</label>
-                <div style={{ display:"flex", gap:8 }}>
-                  <input style={{ ...inp }} placeholder="Type or pick strategy..." value={foForm.strategy} onChange={e=>setFo("strategy",e.target.value)}/>
-                  <button onClick={()=>favStrategies.length>0&&setFoStratOpen(v=>!v)}
-                    title={favStrategies.length>0?"Show saved strategies":"Save a strategy first"}
-                    style={{ background:foStratOpen?"rgba(74,158,255,0.12)":"rgba(74,158,255,0.06)", border:`1.5px solid ${foStratOpen?"#4a9eff":"rgba(74,158,255,0.35)"}`, borderRadius:9, padding:"0 0.75rem", cursor:favStrategies.length>0?"pointer":"default", fontSize:13, flexShrink:0, color:foStratOpen?"#4a9eff":"rgba(74,158,255,0.7)", fontWeight:700, opacity:favStrategies.length>0?1:0.5 }}>
-                    ▼
-                  </button>
-                  <button onClick={()=>toggleFavStrategy(foForm.strategy)}
-                    style={{ background:favStrategies.includes(foForm.strategy.trim())?"rgba(245,166,35,0.2)":"rgba(245,166,35,0.06)", border:`1.5px solid ${favStrategies.includes(foForm.strategy.trim())?"#f5a623":"rgba(245,166,35,0.4)"}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:18, flexShrink:0, color:"#f5a623" }}>
-                    {favStrategies.includes(foForm.strategy.trim()) ? "⭐" : "☆"}
-                  </button>
-                </div>
-                {foStratOpen && favStrategies.length > 0 && (
-                  <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:C.card, border:`1px solid ${C.border}`, borderRadius:10, zIndex:100, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
-                    {favStrategies.map((s,i)=>(
-                      <div key={s} onClick={()=>{ setFo("strategy",s); setFoStratOpen(false); }} style={{
-                        display:"flex", justifyContent:"space-between", alignItems:"center",
-                        padding:"0.65rem 1rem", fontSize:14,
-                        color:foForm.strategy===s?C.red:C.text,
-                        background:foForm.strategy===s?C.redSoft:"transparent",
-                        borderBottom:i<favStrategies.length-1?`1px solid ${C.border}`:"none",
-                        cursor:"pointer"
-                      }}
-                        onMouseEnter={e=>e.currentTarget.style.background=C.cardHover}
-                        onMouseLeave={e=>e.currentTarget.style.background=foForm.strategy===s?C.redSoft:"transparent"}>
-                        <span>{s}</span>
-                        <span onClick={e=>{e.stopPropagation();toggleFavStrategy(s);}} style={{ fontSize:12, color:C.textSec, cursor:"pointer", padding:"2px 6px" }}>✕</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div style={row}>
-              <div><label style={lbl}>Stop Loss — SL ({sym}) <span style={{color:C.textSec,fontWeight:400}}>(optional)</span></label><input type="number" min="0" style={inp} placeholder="e.g. 21800" value={foForm.sl} onChange={e=>setFo("sl",e.target.value)}/></div>
-              <div><label style={lbl}>Take Profit — TP ({sym}) <span style={{color:C.textSec,fontWeight:400}}>(optional)</span></label><input type="number" min="0" style={inp} placeholder="e.g. 22500" value={foForm.tp} onChange={e=>setFo("tp",e.target.value)}/></div>
-            </div>
-          </>
+        {/* QTY + STRATEGY */}
+        <div style={row}>
+          <div>
+            <label style={lbl}>No. of Lots</label>
+            <input type="number" min="0" step="1" style={inp} placeholder="1" value={form.qty} onChange={e=>set("qty",e.target.value)}/>
+          </div>
+          <div>
+            <label style={lbl}>Strategy</label>
+            <select style={{ ...inp, cursor:"pointer" }} value={form.strategy} onChange={e=>set("strategy",e.target.value)}>
+              {mode.defaultStrategies.map(s=><option key={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* SL + TP */}
+        <div style={row}>
+          <div>
+            <label style={lbl}>Stop Loss — SL (₹) <span style={{ color:C.textSec, fontWeight:400 }}>(optional)</span></label>
+            <input type="number" min="0" style={inp} placeholder="e.g. 21800" value={form.sl} onChange={e=>set("sl",e.target.value)}/>
+          </div>
+          <div>
+            <label style={lbl}>Take Profit — TP (₹) <span style={{ color:C.textSec, fontWeight:400 }}>(optional)</span></label>
+            <input type="number" min="0" style={inp} placeholder="e.g. 22500" value={form.tp} onChange={e=>set("tp",e.target.value)}/>
+          </div>
+        </div>
+
+        {/* GREEKS — optional */}
+        <div style={row}>
+          <div>
+            <label style={lbl}>IV at Entry (%) <span style={{ color:C.textSec, fontWeight:400 }}>(optional)</span></label>
+            <input type="number" style={inp} placeholder="14.2" value={form.iv} onChange={e=>set("iv",e.target.value)}/>
+          </div>
+          <div>
+            <label style={lbl}>Delta at Entry <span style={{ color:C.textSec, fontWeight:400 }}>(optional)</span></label>
+            <input type="number" style={inp} placeholder="0.42" value={form.delta} onChange={e=>set("delta",e.target.value)}/>
+          </div>
+        </div>
+
+        {/* AUTO P&L hint */}
+        {showAutoPnl && (
+          <div style={{ background:"rgba(74,158,255,0.08)", border:"1px solid rgba(74,158,255,0.2)", borderRadius:9, padding:"10px 14px", marginBottom:16, fontSize:13, color:C.text }}>
+            <span style={{ color:"#4a9eff", fontWeight:600 }}>Auto estimate: </span>
+            <span style={{ fontFamily:"monospace", fontWeight:700, color: autoPnl >= 0 ? C.green : C.red }}>
+              {autoPnl >= 0 ? "+" : ""}₹{Math.abs(Math.round(autoPnl)).toLocaleString("en-IN")}
+            </span>
+            <span style={{ color:C.textSec, marginLeft:8, fontSize:12 }}>({lots} lot × {lotSize} qty × ₹{Math.abs(exitNum-entryNum).toFixed(2)} move)</span>
+          </div>
         )}
 
+        {/* ACTUAL P&L */}
         <div style={{ marginBottom:16 }}>
-          <label style={lbl}>Actual P&L ({sym}) <span style={{color:C.red,fontWeight:600}}>*</span></label>
+          <label style={lbl}>Actual P&L (₹) <span style={{ color:C.red, fontWeight:600 }}>*</span></label>
           <div style={{ position:"relative" }}>
-            <input
-              type="number"
-              style={{ ...inp, border:`1px solid ${activePnl!==""?(pnlNum>=0?"rgba(31,208,122,0.5)":"rgba(230,57,70,0.5)"):C.border}`, paddingRight:80 }}
-              placeholder="Enter profit (+) or loss (-) e.g. 250 or -150"
-              value={tradeMode==="cfd"?cfdForm.pnl:foForm.pnl}
-              onChange={e=>tradeMode==="cfd"?setCfd("pnl",e.target.value):setFo("pnl",e.target.value)}
-            />
-            {activePnl!=="" && !isNaN(pnlNum) && (
-              <span style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", fontSize:13, fontWeight:700, fontFamily:"monospace", color:pnlNum>=0?C.green:C.red }}>
-                {pnlNum>=0?"+":""}{sym}{Math.abs(pnlNum).toLocaleString()}
+            <input type="number"
+              style={{ ...inp, border:`1px solid ${form.pnl!==""?(parseFloat(form.pnl)>=0?"rgba(31,208,122,0.5)":"rgba(230,57,70,0.5)"):C.border}`, paddingRight:90 }}
+              placeholder="Enter actual P&L from your broker e.g. 3250 or -1800"
+              value={form.pnl} onChange={e=>set("pnl",e.target.value)}/>
+            {form.pnl !== "" && !isNaN(parseFloat(form.pnl)) && (
+              <span style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", fontSize:13, fontWeight:700, fontFamily:"monospace", color:parseFloat(form.pnl)>=0?C.green:C.red }}>
+                {parseFloat(form.pnl)>=0?"+":""}₹{Math.abs(parseFloat(form.pnl)).toLocaleString("en-IN")}
               </span>
             )}
           </div>
-          <div style={{ fontSize:11, color:C.textSec, marginTop:5 }}>
-            💡 Profit → positive number (e.g. 250) &nbsp;|&nbsp; Loss → negative number (e.g. -150)
-          </div>
+          <div style={{ fontSize:11, color:C.textSec, marginTop:5 }}>💡 Use your broker's actual realized P&L — includes brokerage & taxes</div>
         </div>
 
+        {/* NOTES */}
         <div style={{ marginBottom:20 }}>
           <label style={lbl}>Trade Notes</label>
           <textarea style={{ ...inp, resize:"vertical", minHeight:90, lineHeight:1.6 }}
-            placeholder="What was your reasoning? What did you learn?"
-            value={tradeMode==="cfd"?cfdForm.notes:foForm.notes}
-            onChange={e=>tradeMode==="cfd"?setCfd("notes",e.target.value):setFo("notes",e.target.value)}/>
+            placeholder="What was your reasoning? Market context? What did you learn?"
+            value={form.notes} onChange={e=>set("notes",e.target.value)}/>
         </div>
 
         <button onClick={handleSubmit} disabled={saving} style={{ background:saving?"#333":C.red, color:"#fff", border:"none", borderRadius:10, padding:"0.85rem 2rem", fontWeight:700, cursor:saving?"not-allowed":"pointer", fontSize:15, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}>
-          <Plus size={16}/>{saving?"Saving...":"Log This Trade"}
+          <Plus size={16}/>{saving?"Saving...":"Log This F&O Trade"}
         </button>
       </div>
     </div>
@@ -1076,7 +1019,192 @@ function AddTradeView({ onAdd, userId }) {
 }
 
 /* ═══════════════════════════════════════
-   TRADE HISTORY
+   ADD TRADE — FOREX/CFD MODE
+═══════════════════════════════════════ */
+function AddForexTradeView({ onAdd, userId }) {
+  const mode = TRADING_MODES["forex"];
+  const blankForm = { date:"", asset:"", type:"Long", entry:"", exit:"", lotSize:"", sl:"", tp:"", pnl:"", currency:"USD", strategy:"Trend Follow", notes:"" };
+  const [form, setForm]       = useState(blankForm);
+  const [success, setSuccess] = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [favourites, setFavourites] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("rr_fav_assets_forex") || '["EURUSD","XAUUSD","GBPUSD"]'); } catch { return ["EURUSD","XAUUSD","GBPUSD"]; }
+  });
+
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const toggleFav = (asset) => {
+    const a = asset.trim().toUpperCase();
+    if (!a) return;
+    const updated = favourites.includes(a) ? favourites.filter(x=>x!==a) : [...favourites, a];
+    setFavourites(updated);
+    localStorage.setItem("rr_fav_assets_forex", JSON.stringify(updated));
+  };
+
+  const currSymbol = (code) => ({ USD:"$", INR:"₹", EUR:"€" }[code] || "$");
+  const sym = currSymbol(form.currency);
+  const pnlNum = parseFloat(form.pnl);
+
+  const handleSubmit = async () => {
+    if (!form.date || !form.asset || !form.entry || !form.exit || !form.lotSize || form.pnl === "") {
+      alert("Please fill in all required fields including Actual P&L!");
+      return;
+    }
+    setSaving(true);
+    const manualPnl = parseFloat(form.pnl);
+    const trade = {
+      date: form.date,
+      asset: form.asset.trim().toUpperCase(),
+      type: form.type,
+      entry: parseFloat(form.entry),
+      exit: parseFloat(form.exit),
+      qty: Math.abs(parseFloat(form.lotSize)),
+      strategy: form.strategy,
+      notes: form.notes || "",
+      currency: form.currency,
+      trade_mode: "forex",
+      instrument: "CFD",
+      sl: form.sl ? parseFloat(form.sl) : null,
+      tp: form.tp ? parseFloat(form.tp) : null,
+      pnl: isNaN(manualPnl) ? 0 : manualPnl,
+      user_id: userId,
+    };
+    const { data, error } = await supabase.from("trades").insert([trade]).select().single();
+    setSaving(false);
+    if (error) { alert("Error saving trade: " + error.message); return; }
+    if (data) {
+      onAdd(data);
+      setSuccess(true);
+      setForm(blankForm);
+      setTimeout(()=>setSuccess(false), 3000);
+    }
+  };
+
+  const inp = { background:C.surface, border:`1px solid ${C.border}`, borderRadius:9, padding:"0.7rem 1rem", color:C.text, fontSize:14, outline:"none", width:"100%", boxSizing:"border-box", fontFamily:"inherit" };
+  const lbl = { fontSize:13, color:C.textSec, marginBottom:6, display:"block", fontWeight:500 };
+  const row = { display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16 };
+
+  const btnToggle = (active, color) => ({
+    flex:1, padding:"0.65rem", border:`1px solid ${active?color:C.border}`, borderRadius:9,
+    background: active ? `${color}20` : "transparent",
+    color: active ? color : C.textSec,
+    fontWeight:600, cursor:"pointer", fontSize:13, fontFamily:"inherit"
+  });
+
+  return (
+    <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1 }}>
+      <div style={{ marginBottom:"1.75rem", display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+        <div>
+          <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Log Forex / CFD Trade</h1>
+          <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Global FX, commodities, crypto, and CFDs.</p>
+        </div>
+        <ModeBadge tradingMode="forex" />
+      </div>
+
+      {success && <div style={{ background:C.greenSoft, border:"1px solid rgba(31,208,122,0.3)", borderRadius:10, padding:"0.85rem 1rem", marginBottom:20, color:C.green, fontSize:14, display:"flex", alignItems:"center", gap:8 }}><Check size={16}/> Forex trade saved! Dashboard updated.</div>}
+
+      <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"1.75rem", maxWidth:680 }}>
+
+        <div style={row}>
+          <div>
+            <label style={lbl}>Date</label>
+            <input type="date" style={{ ...inp, colorScheme:"dark" }} value={form.date} onChange={e=>set("date",e.target.value)}/>
+          </div>
+          <div>
+            <label style={lbl}>Asset / Symbol</label>
+            <AssetInput value={form.asset} onChange={v=>set("asset",v)} favourites={favourites} onToggleFav={()=>toggleFav(form.asset)}/>
+          </div>
+        </div>
+
+        <div style={{ marginBottom:16 }}>
+          <label style={lbl}>Direction</label>
+          <div style={{ display:"flex", gap:10 }}>
+            <button onClick={()=>set("type","Long")} style={btnToggle(form.type==="Long",C.green)}>📈 Long</button>
+            <button onClick={()=>set("type","Short")} style={btnToggle(form.type==="Short",C.red)}>📉 Short</button>
+          </div>
+        </div>
+
+        <div style={row}>
+          <div>
+            <label style={lbl}>Entry Price ({sym})</label>
+            <input type="number" style={inp} placeholder="1.2050" value={form.entry} onChange={e=>set("entry",e.target.value)}/>
+          </div>
+          <div>
+            <label style={lbl}>Exit Price ({sym})</label>
+            <input type="number" style={inp} placeholder="1.2150" value={form.exit} onChange={e=>set("exit",e.target.value)}/>
+          </div>
+        </div>
+
+        <div style={row}>
+          <div>
+            <label style={lbl}>Lot Size</label>
+            <input type="text" inputMode="decimal" style={inp} placeholder="e.g. 0.01, 0.1, 1.0"
+              value={form.lotSize}
+              onKeyDown={e=>{ if(["-","e","E","+"].includes(e.key)) e.preventDefault(); }}
+              onChange={e=>{ const v = e.target.value; if(v===""||/^\d*\.?\d{0,2}$/.test(v)) set("lotSize",v); }}/>
+          </div>
+          <div>
+            <label style={lbl}>Strategy</label>
+            <select style={{ ...inp, cursor:"pointer" }} value={form.strategy} onChange={e=>set("strategy",e.target.value)}>
+              {mode.defaultStrategies.map(s=><option key={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div style={row}>
+          <div>
+            <label style={lbl}>Currency</label>
+            <div style={{ display:"flex", gap:8 }}>
+              {["USD","EUR","INR"].map(code=>(
+                <button key={code} onClick={()=>set("currency",code)}
+                  style={{ ...btnToggle(form.currency===code,"#4a9eff"), flex:"none", padding:"0.6rem 1rem" }}>{code}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={lbl}>Stop Loss ({sym}) <span style={{ color:C.textSec, fontWeight:400 }}>(optional)</span></label>
+            <input type="number" min="0" style={inp} placeholder="e.g. 1.1950" value={form.sl} onChange={e=>set("sl",e.target.value)}/>
+          </div>
+        </div>
+
+        <div style={{ marginBottom:16 }}>
+          <label style={lbl}>Take Profit ({sym}) <span style={{ color:C.textSec, fontWeight:400 }}>(optional)</span></label>
+          <input type="number" min="0" style={inp} placeholder="e.g. 1.2300" value={form.tp} onChange={e=>set("tp",e.target.value)}/>
+        </div>
+
+        <div style={{ marginBottom:16 }}>
+          <label style={lbl}>Actual P&L ({sym}) <span style={{ color:C.red, fontWeight:600 }}>*</span></label>
+          <div style={{ position:"relative" }}>
+            <input type="number"
+              style={{ ...inp, border:`1px solid ${form.pnl!==""?(pnlNum>=0?"rgba(31,208,122,0.5)":"rgba(230,57,70,0.5)"):C.border}`, paddingRight:80 }}
+              placeholder="Enter profit (+) or loss (-) e.g. 250 or -150"
+              value={form.pnl} onChange={e=>set("pnl",e.target.value)}/>
+            {form.pnl !== "" && !isNaN(pnlNum) && (
+              <span style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", fontSize:13, fontWeight:700, fontFamily:"monospace", color:pnlNum>=0?C.green:C.red }}>
+                {pnlNum>=0?"+":""}{sym}{Math.abs(pnlNum).toLocaleString()}
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize:11, color:C.textSec, marginTop:5 }}>💡 Profit → positive (e.g. 250) &nbsp;|&nbsp; Loss → negative (e.g. -150)</div>
+        </div>
+
+        <div style={{ marginBottom:20 }}>
+          <label style={lbl}>Trade Notes</label>
+          <textarea style={{ ...inp, resize:"vertical", minHeight:90, lineHeight:1.6 }}
+            placeholder="Market context, session (London/NY/Asia), catalyst, what you learned..."
+            value={form.notes} onChange={e=>set("notes",e.target.value)}/>
+        </div>
+
+        <button onClick={handleSubmit} disabled={saving} style={{ background:saving?"#333":C.red, color:"#fff", border:"none", borderRadius:10, padding:"0.85rem 2rem", fontWeight:700, cursor:saving?"not-allowed":"pointer", fontSize:15, fontFamily:"inherit", display:"flex", alignItems:"center", gap:8 }}>
+          <Plus size={16}/>{saving?"Saving...":"Log This Forex Trade"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════
+   TRADE HISTORY (shared)
 ═══════════════════════════════════════ */
 function TradeReportCard({ trade, onClose, convertPnl, currSym }) {
   if (!trade) return null;
@@ -1086,30 +1214,27 @@ function TradeReportCard({ trade, onClose, convertPnl, currSym }) {
   return (
     <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999, padding:"1rem" }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, width:"100%", maxWidth:420, padding:"1.5rem", boxShadow:"0 20px 60px rgba(0,0,0,0.5)" }}>
-        {/* Header */}
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"1.25rem" }}>
           <div>
             <div style={{ fontSize:20, fontWeight:700, color:C.text }}>{trade.asset} — {trade.type}</div>
-            <div style={{ fontSize:12, color:C.textSec, marginTop:3 }}>{trade.date} · {trade.trade_mode==="cfd"?"CFD":"F&O"}</div>
+            <div style={{ fontSize:12, color:C.textSec, marginTop:3 }}>{trade.date} · {trade.trade_mode==="fo"?"F&O":"Forex/CFD"}</div>
           </div>
           <button onClick={onClose} style={{ background:C.surface, border:"none", color:C.textSec, width:28, height:28, borderRadius:"50%", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
         </div>
-        {/* P&L Big */}
-        <div style={{ textAlign:"center", padding:"1rem", borderRadius:12, marginBottom:"1.25rem", background: isProfit?"rgba(31,208,122,0.1)":"rgba(230,57,70,0.1)", border:`1px solid ${isProfit?"rgba(31,208,122,0.25)":"rgba(230,57,70,0.3)"}` }}>
-          <div style={{ fontSize:36, fontWeight:800, fontFamily:"monospace", color: isProfit?C.green:C.red }}>
+        <div style={{ textAlign:"center", padding:"1rem", borderRadius:12, marginBottom:"1.25rem", background:isProfit?"rgba(31,208,122,0.1)":"rgba(230,57,70,0.1)", border:`1px solid ${isProfit?"rgba(31,208,122,0.25)":"rgba(230,57,70,0.3)"}` }}>
+          <div style={{ fontSize:36, fontWeight:800, fontFamily:"monospace", color:isProfit?C.green:C.red }}>
             {isProfit?"+":""}{sym}{Math.abs(cpnl).toLocaleString()}
           </div>
-          <div style={{ fontSize:12, color: isProfit?C.green:C.red, marginTop:4 }}>{isProfit?"Profit":"Loss"}</div>
+          <div style={{ fontSize:12, color:isProfit?C.green:C.red, marginTop:4 }}>{isProfit?"Profit":"Loss"}</div>
         </div>
-        {/* Details Grid */}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:"1rem" }}>
           {[
             ["Entry Price", `${sym}${trade.entry?.toLocaleString()}`],
             ["Exit Price",  `${sym}${trade.exit?.toLocaleString()}`],
-            ["Lot / Qty",   trade.qty],
-            ["Strategy",    trade.strategy],
-            ["Stop Loss",   trade.sl ? `${sym}${trade.sl}` : "—"],
-            ["Take Profit", trade.tp ? `${sym}${trade.tp}` : "—"],
+            ["Qty / Lots",  trade.qty],
+            ["Strategy",   trade.strategy],
+            ["Stop Loss",  trade.sl ? `${sym}${trade.sl}` : "—"],
+            ["Take Profit",trade.tp ? `${sym}${trade.tp}` : "—"],
           ].map(([label, value]) => (
             <div key={label} style={{ background:C.surface, borderRadius:8, padding:"10px 12px" }}>
               <div style={{ fontSize:10, color:C.textSec, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:4 }}>{label}</div>
@@ -1117,7 +1242,6 @@ function TradeReportCard({ trade, onClose, convertPnl, currSym }) {
             </div>
           ))}
         </div>
-        {/* Notes */}
         {trade.notes && (
           <div style={{ background:C.surface, borderRadius:8, padding:"10px 12px" }}>
             <div style={{ fontSize:10, color:C.textSec, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:4 }}>Notes</div>
@@ -1129,7 +1253,8 @@ function TradeReportCard({ trade, onClose, convertPnl, currSym }) {
   );
 }
 
-function HistoryView({ trades, onDelete, convertPnl, currSym }) {
+function HistoryView({ trades, onDelete, convertPnl, currSym, tradingMode }) {
+  const mode = TRADING_MODES[tradingMode];
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
   const [selected, setSelected] = useState(null);
@@ -1142,9 +1267,12 @@ function HistoryView({ trades, onDelete, convertPnl, currSym }) {
   return (
     <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1 }}>
       {selected && <TradeReportCard trade={selected} onClose={()=>setSelected(null)} convertPnl={convertPnl} currSym={currSym}/>}
-      <div style={{ marginBottom:"1.75rem" }}>
-        <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Trade History</h1>
-        <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Click any trade to view full report card.</p>
+      <div style={{ marginBottom:"1.75rem", display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:12 }}>
+        <div>
+          <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>{mode.historyLabel}</h1>
+          <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Click any trade to view full report card.</p>
+        </div>
+        <ModeBadge tradingMode={tradingMode} />
       </div>
       <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap" }}>
         <div style={{ position:"relative" }}>
@@ -1162,7 +1290,8 @@ function HistoryView({ trades, onDelete, convertPnl, currSym }) {
         </div>
         {filtered.length===0 ? <div style={{ padding:"3rem", textAlign:"center", color:C.textSec, fontSize:14 }}>No trades found.</div>
         : filtered.map((t,i)=>(
-          <div key={t.id} onClick={()=>setSelected(t)} style={{ display:"grid", gridTemplateColumns:"90px 100px 60px 100px 100px 90px 1fr 80px 50px", padding:"0.85rem 1rem", borderBottom:i<filtered.length-1?`1px solid ${C.border}`:"none", alignItems:"center", background:i%2===0?"transparent":"rgba(255,255,255,0.01)", cursor:"pointer", transition:"background 0.15s" }}
+          <div key={t.id} onClick={()=>setSelected(t)}
+            style={{ display:"grid", gridTemplateColumns:"90px 100px 60px 100px 100px 90px 1fr 80px 50px", padding:"0.85rem 1rem", borderBottom:i<filtered.length-1?`1px solid ${C.border}`:"none", alignItems:"center", background:i%2===0?"transparent":"rgba(255,255,255,0.01)", cursor:"pointer" }}
             onMouseEnter={e=>e.currentTarget.style.background=C.cardHover}
             onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"transparent":"rgba(255,255,255,0.01)"}>
             <span style={{ fontSize:12, color:C.textSec }}>{t.date}</span>
@@ -1179,8 +1308,6 @@ function HistoryView({ trades, onDelete, convertPnl, currSym }) {
           </div>
         ))}
       </div>
-
-      {/* WIN/LOSS TOTALS */}
       {filtered.length > 0 && (()=>{
         const wins   = filtered.filter(t=>t.pnl>0);
         const losses = filtered.filter(t=>t.pnl<0);
@@ -1191,17 +1318,17 @@ function HistoryView({ trades, onDelete, convertPnl, currSym }) {
         return (
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginTop:12 }}>
             <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:"0.9rem 1rem" }}>
-              <div style={{ fontSize:11, color:C.textSec, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.05em" }}>✅ Total Wins</div>
+              <div style={{ fontSize:11, color:C.textSec, marginBottom:5, textTransform:"uppercase" }}>✅ Total Wins</div>
               <div style={{ fontSize:15, fontWeight:700, color:C.green, fontFamily:"monospace" }}>+{sym}{Math.abs(totalWin).toLocaleString()}</div>
               <div style={{ fontSize:11, color:C.textSec, marginTop:3 }}>{wins.length} winning trades</div>
             </div>
             <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:"0.9rem 1rem" }}>
-              <div style={{ fontSize:11, color:C.textSec, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.05em" }}>❌ Total Losses</div>
+              <div style={{ fontSize:11, color:C.textSec, marginBottom:5, textTransform:"uppercase" }}>❌ Total Losses</div>
               <div style={{ fontSize:15, fontWeight:700, color:C.red, fontFamily:"monospace" }}>{sym}{Math.abs(totalLoss).toLocaleString()}</div>
               <div style={{ fontSize:11, color:C.textSec, marginTop:3 }}>{losses.length} losing trades</div>
             </div>
             <div style={{ background:C.card, border:`2px solid ${net>=0?C.green:C.red}`, borderRadius:10, padding:"0.9rem 1rem" }}>
-              <div style={{ fontSize:11, color:C.textSec, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.05em" }}>💰 Net P&L</div>
+              <div style={{ fontSize:11, color:C.textSec, marginBottom:5, textTransform:"uppercase" }}>💰 Net P&L</div>
               <div style={{ fontSize:15, fontWeight:700, color:net>=0?C.green:C.red, fontFamily:"monospace" }}>{net>=0?"+":""}{sym}{Math.abs(net).toLocaleString()}</div>
               <div style={{ fontSize:11, color:C.textSec, marginTop:3 }}>{filtered.length} total trades</div>
             </div>
@@ -1213,9 +1340,10 @@ function HistoryView({ trades, onDelete, convertPnl, currSym }) {
 }
 
 /* ═══════════════════════════════════════
-   ANALYTICS
+   ANALYTICS (shared)
 ═══════════════════════════════════════ */
-function AnalyticsView({ trades, convertPnl, currSym }) {
+function AnalyticsView({ trades, convertPnl, currSym, tradingMode }) {
+  const mode = TRADING_MODES[tradingMode];
   const stats = useMemo(()=>{
     if(!trades.length) return null;
     const cp = (t) => convertPnl ? convertPnl(t.pnl, t.currency||"USD") : t.pnl;
@@ -1238,13 +1366,16 @@ function AnalyticsView({ trades, convertPnl, currSym }) {
     return { winRate,avgWin,avgLoss,totalPnl,profitFactor,best,worst,stratData,monthData,wlPie };
   },[trades, convertPnl]);
 
-  if(!stats) return <div style={{ padding:"2rem", color:C.textSec, fontFamily:"sans-serif" }}>Log some trades to see analytics.</div>;
+  if(!stats) return <div style={{ padding:"2rem", color:C.textSec, fontFamily:"sans-serif" }}>Log some {mode.label} trades to see analytics.</div>;
 
   return (
     <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1 }}>
-      <div style={{ marginBottom:"1.75rem" }}>
-        <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Analytics</h1>
-        <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Deep insights into your trading performance.</p>
+      <div style={{ marginBottom:"1.75rem", display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:12 }}>
+        <div>
+          <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Analytics</h1>
+          <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Deep insights into your {mode.fullLabel} performance.</p>
+        </div>
+        <ModeBadge tradingMode={tradingMode} />
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:12, marginBottom:20 }}>
         {[{ label:"Win Rate",value:`${stats.winRate}%`,color:stats.winRate>=50?C.green:C.red },{ label:"Avg Win",value:`+${currSym||"$"}${stats.avgWin.toLocaleString()}`,color:C.green },{ label:"Avg Loss",value:`-${currSym||"$"}${Math.abs(stats.avgLoss).toLocaleString()}`,color:C.red },{ label:"Profit Factor",value:stats.profitFactor,color:C.amber }].map(m=>(
@@ -1260,7 +1391,7 @@ function AnalyticsView({ trades, convertPnl, currSym }) {
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={stats.monthData}>
               <XAxis dataKey="month" tick={{ fontSize:11, fill:C.textSec }} axisLine={false} tickLine={false}/>
-              <YAxis tick={{ fontSize:11, fill:C.textSec }} axisLine={false} tickLine={false} tickFormatter={v=>`₹${v}`}/>
+              <YAxis tick={{ fontSize:11, fill:C.textSec }} axisLine={false} tickLine={false} tickFormatter={v=>`${currSym}${v}`}/>
               <Tooltip formatter={v=>[`${v>=0?"+":""}${currSym||"$"}${Math.abs(v).toLocaleString()}`,"P&L"]}/>
               <Bar dataKey="pnl" radius={[4,4,0,0]}>
                 {stats.monthData.map((m,i)=><Cell key={i} fill={m.pnl>=0?C.green:C.red} opacity={0.85}/>)}
@@ -1321,9 +1452,10 @@ function AnalyticsView({ trades, convertPnl, currSym }) {
 }
 
 /* ═══════════════════════════════════════
-   BACKTESTING VIEW
+   BACKTESTING VIEW (shared)
 ═══════════════════════════════════════ */
-function BacktestingView({ trades, convertPnl, currSym }) {
+function BacktestingView({ trades, convertPnl, currSym, tradingMode }) {
+  const mode = TRADING_MODES[tradingMode];
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
@@ -1331,7 +1463,6 @@ function BacktestingView({ trades, convertPnl, currSym }) {
 
   const cp = (t) => convertPnl ? convertPnl(t.pnl, t.currency||"USD") : t.pnl;
 
-  // ── CALENDAR DATA ──
   const calendarData = useMemo(() => {
     const [year, month] = selectedMonth.split("-").map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
@@ -1341,17 +1472,14 @@ function BacktestingView({ trades, convertPnl, currSym }) {
       days[key] = { pnl:0, count:0 };
     }
     trades.forEach(t => {
-      if (t.date && t.date.startsWith(selectedMonth)) {
-        if (days[t.date]) {
-          days[t.date].pnl += cp(t);
-          days[t.date].count += 1;
-        }
+      if (t.date && t.date.startsWith(selectedMonth) && days[t.date]) {
+        days[t.date].pnl += cp(t);
+        days[t.date].count += 1;
       }
     });
     return days;
   }, [trades, selectedMonth, convertPnl]);
 
-  // ── STRATEGY REPORT CARD ──
   const strategyStats = useMemo(() => {
     const map = {};
     trades.forEach(t => {
@@ -1371,33 +1499,26 @@ function BacktestingView({ trades, convertPnl, currSym }) {
     }).sort((a,b) => b.winRate - a.winRate);
   }, [trades, convertPnl]);
 
-  // ── AUTO INSIGHTS ──
   const insights = useMemo(() => {
     if (!trades.length) return [];
     const list = [];
     const converted = trades.map(t=>({...t, cpnl: cp(t)}));
-
-    // Best direction
     const longs = converted.filter(t=>t.type==="Long");
     const shorts = converted.filter(t=>t.type==="Short");
     const longWR = longs.length ? Math.round((longs.filter(t=>t.cpnl>0).length/longs.length)*100) : 0;
     const shortWR = shorts.length ? Math.round((shorts.filter(t=>t.cpnl>0).length/shorts.length)*100) : 0;
     if (longs.length && shorts.length) {
-      if (longWR > shortWR) list.push({ icon:"📈", text:`You win ${longWR}% on Long trades vs ${shortWR}% on Short trades`, color: C.green });
-      else list.push({ icon:"📉", text:`You win ${shortWR}% on Short trades vs ${longWR}% on Long trades`, color: C.green });
+      if (longWR > shortWR) list.push({ icon:"📈", text:`You win ${longWR}% on Long trades vs ${shortWR}% on Short trades`, color:C.green });
+      else list.push({ icon:"📉", text:`You win ${shortWR}% on Short trades vs ${longWR}% on Long trades`, color:C.green });
     }
-
-    // Best strategy
     if (strategyStats.length) {
       const best = strategyStats[0];
-      list.push({ icon:"🏆", text:`Your best strategy is ${best.name} with ${best.winRate}% win rate`, color: C.amber });
+      list.push({ icon:"🏆", text:`Your best strategy is ${best.name} with ${best.winRate}% win rate`, color:C.amber });
       if (strategyStats.length > 1) {
         const worst = strategyStats[strategyStats.length-1];
-        list.push({ icon:"⚠️", text:`Your weakest strategy is ${worst.name} with only ${worst.winRate}% win rate`, color: C.red });
+        list.push({ icon:"⚠️", text:`Your weakest strategy is ${worst.name} with only ${worst.winRate}% win rate`, color:C.red });
       }
     }
-
-    // Best day of week
     const byDay = {0:{n:"Sunday",w:0,t:0},1:{n:"Monday",w:0,t:0},2:{n:"Tuesday",w:0,t:0},3:{n:"Wednesday",w:0,t:0},4:{n:"Thursday",w:0,t:0},5:{n:"Friday",w:0,t:0},6:{n:"Saturday",w:0,t:0}};
     converted.forEach(t => {
       if (!t.date) return;
@@ -1409,29 +1530,22 @@ function BacktestingView({ trades, convertPnl, currSym }) {
     if (activeDays.length) {
       const bestDay = activeDays.reduce((a,b)=>(b.w/b.t)>(a.w/a.t)?b:a);
       const worstDay = activeDays.reduce((a,b)=>(b.w/b.t)<(a.w/a.t)?b:a);
-      list.push({ icon:"📅", text:`${bestDay.n} is your most profitable day (${Math.round(bestDay.w/bestDay.t*100)}% win rate)`, color: C.green });
-      if (bestDay.n !== worstDay.n) list.push({ icon:"😬", text:`${worstDay.n} is your worst day (${Math.round(worstDay.w/worstDay.t*100)}% win rate)`, color: C.red });
+      list.push({ icon:"📅", text:`${bestDay.n} is your most profitable day (${Math.round(bestDay.w/bestDay.t*100)}% win rate)`, color:C.green });
+      if (bestDay.n !== worstDay.n) list.push({ icon:"😬", text:`${worstDay.n} is your worst day (${Math.round(worstDay.w/worstDay.t*100)}% win rate)`, color:C.red });
     }
-
-    // Risk reward
     const wins = converted.filter(t=>t.cpnl>0);
     const losses = converted.filter(t=>t.cpnl<0);
     if (wins.length && losses.length) {
       const avgWin = wins.reduce((a,t)=>a+t.cpnl,0)/wins.length;
       const avgLoss = Math.abs(losses.reduce((a,t)=>a+t.cpnl,0)/losses.length);
       const rr = +(avgWin/avgLoss).toFixed(2);
-      const rrColor = rr >= 2 ? C.green : rr >= 1 ? C.amber : C.red;
-      list.push({ icon:"⚖️", text:`Your average winner is ${rr}x your average loser`, color: rrColor });
+      list.push({ icon:"⚖️", text:`Your average winner is ${rr}x your average loser`, color:rr>=2?C.green:rr>=1?C.amber:C.red });
     }
-
-    // Total trades insight
     const totalPnl = converted.reduce((a,t)=>a+t.cpnl,0);
-    list.push({ icon:"💰", text:`Total P&L across ${trades.length} trades: ${totalPnl>=0?"+":""}${currSym||"$"}${Math.abs(totalPnl).toLocaleString()}`, color: totalPnl>=0?C.green:C.red });
-
+    list.push({ icon:"💰", text:`Total P&L across ${trades.length} trades: ${totalPnl>=0?"+":""}${currSym||"$"}${Math.abs(totalPnl).toLocaleString()}`, color:totalPnl>=0?C.green:C.red });
     return list;
   }, [trades, strategyStats, convertPnl, currSym]);
 
-  // ── GET MONTHS FOR SELECTOR ──
   const months = useMemo(() => {
     const set = new Set(trades.map(t=>t.date?.slice(0,7)).filter(Boolean));
     return Array.from(set).sort().reverse();
@@ -1440,23 +1554,24 @@ function BacktestingView({ trades, convertPnl, currSym }) {
   const [year, month] = selectedMonth.split("-").map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
   const firstDayOfWeek = new Date(year, month-1, 1).getDay();
-
   const monthNames = ["","January","February","March","April","May","June","July","August","September","October","November","December"];
 
   return (
     <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1 }}>
-      <div style={{ marginBottom:"1.75rem" }}>
-        <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Backtesting</h1>
-        <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Analyse your trade history. Find your patterns. Improve your edge.</p>
+      <div style={{ marginBottom:"1.75rem", display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:12 }}>
+        <div>
+          <h1 style={{ fontSize:"1.5rem", fontWeight:700, color:C.text, margin:"0 0 0.25rem" }}>Backtesting</h1>
+          <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Analyse patterns. Improve your {mode.label} edge.</p>
+        </div>
+        <ModeBadge tradingMode={tradingMode} />
       </div>
 
       {trades.length === 0 ? (
         <div style={{ textAlign:"center", color:C.textSec, fontSize:14, padding:"4rem" }}>
-          No trades logged yet. Start logging trades to see your backtesting insights!
+          No {mode.label} trades logged yet. Start logging trades to see backtesting insights!
         </div>
       ) : (
         <>
-          {/* ── CALENDAR HEATMAP ── */}
           <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"1.5rem", marginBottom:20 }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:12 }}>
               <div style={{ fontSize:14, fontWeight:600, color:C.text }}>📅 Calendar Heatmap</div>
@@ -1467,19 +1582,13 @@ function BacktestingView({ trades, convertPnl, currSym }) {
                 ))}
               </select>
             </div>
-
-            {/* Day labels */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4, marginBottom:4 }}>
               {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
                 <div key={d} style={{ textAlign:"center", fontSize:11, color:C.textSec, fontWeight:600 }}>{d}</div>
               ))}
             </div>
-
-            {/* Calendar grid */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4 }}>
-              {Array.from({length: firstDayOfWeek}).map((_,i)=>(
-                <div key={`empty-${i}`} />
-              ))}
+              {Array.from({length: firstDayOfWeek}).map((_,i)=><div key={`empty-${i}`} />)}
               {Array.from({length: daysInMonth}).map((_,i)=>{
                 const day = i+1;
                 const key = `${selectedMonth}-${String(day).padStart(2,"0")}`;
@@ -1487,32 +1596,21 @@ function BacktestingView({ trades, convertPnl, currSym }) {
                 const hasTrades = data && data.count > 0;
                 const isProfit = hasTrades && data.pnl >= 0;
                 return (
-                  <div key={day} title={hasTrades ? `${data.count} trade(s) | P&L: ${isProfit?"+":""}${currSym||"$"}${Math.abs(data.pnl).toLocaleString()}` : "No trades"} style={{
-                    aspectRatio:"1", borderRadius:6, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-                    background: !hasTrades ? C.surface : isProfit ? "rgba(31,208,122,0.2)" : "rgba(230,57,70,0.2)",
-                    border: `1px solid ${!hasTrades ? C.border : isProfit ? "rgba(31,208,122,0.4)" : "rgba(230,57,70,0.4)"}`,
-                    cursor: hasTrades ? "pointer" : "default"
-                  }}>
-                    <span style={{ fontSize:11, color: !hasTrades ? C.textSec : isProfit ? C.green : C.red, fontWeight:600 }}>{day}</span>
-                    {hasTrades && <span style={{ fontSize:9, color: isProfit ? C.green : C.red }}>
-                      {isProfit?"+":"-"}{currSym||"$"}{Math.abs(Math.round(data.pnl))}
-                    </span>}
+                  <div key={day} title={hasTrades ? `${data.count} trade(s) | P&L: ${isProfit?"+":""}${currSym||"$"}${Math.abs(data.pnl).toLocaleString()}` : "No trades"}
+                    style={{ aspectRatio:"1", borderRadius:6, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:!hasTrades?C.surface:isProfit?"rgba(31,208,122,0.2)":"rgba(230,57,70,0.2)", border:`1px solid ${!hasTrades?C.border:isProfit?"rgba(31,208,122,0.4)":"rgba(230,57,70,0.4)"}`, cursor:hasTrades?"pointer":"default" }}>
+                    <span style={{ fontSize:11, color:!hasTrades?C.textSec:isProfit?C.green:C.red, fontWeight:600 }}>{day}</span>
+                    {hasTrades && <span style={{ fontSize:9, color:isProfit?C.green:C.red }}>{isProfit?"+":"-"}{currSym||"$"}{Math.abs(Math.round(data.pnl))}</span>}
                   </div>
                 );
               })}
             </div>
-
-            {/* Legend */}
             <div style={{ display:"flex", gap:16, marginTop:12, justifyContent:"flex-end" }}>
               {[["🟢","Profitable day"],["🔴","Loss day"],["⬜","No trades"]].map(([icon,label])=>(
-                <div key={label} style={{ display:"flex", alignItems:"center", gap:4, fontSize:11, color:C.textSec }}>
-                  <span>{icon}</span>{label}
-                </div>
+                <div key={label} style={{ display:"flex", alignItems:"center", gap:4, fontSize:11, color:C.textSec }}><span>{icon}</span>{label}</div>
               ))}
             </div>
           </div>
 
-          {/* ── STRATEGY REPORT CARD ── */}
           <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"1.5rem", marginBottom:20 }}>
             <div style={{ fontSize:14, fontWeight:600, color:C.text, marginBottom:16 }}>📊 Strategy Report Card</div>
             {strategyStats.length === 0 ? (
@@ -1535,9 +1633,7 @@ function BacktestingView({ trades, convertPnl, currSym }) {
                           </div>
                         </div>
                         <div style={{ textAlign:"right" }}>
-                          <div style={{ fontSize:15, fontWeight:700, fontFamily:"monospace", color:s.pnl>=0?C.green:C.red }}>
-                            {s.pnl>=0?"+":""}{currSym||"$"}{Math.abs(s.pnl).toLocaleString()}
-                          </div>
+                          <div style={{ fontSize:15, fontWeight:700, fontFamily:"monospace", color:s.pnl>=0?C.green:C.red }}>{s.pnl>=0?"+":""}{currSym||"$"}{Math.abs(s.pnl).toLocaleString()}</div>
                           <div style={{ fontSize:12, color:C.textSec }}>{s.winRate}% win rate</div>
                         </div>
                       </div>
@@ -1551,7 +1647,6 @@ function BacktestingView({ trades, convertPnl, currSym }) {
             )}
           </div>
 
-          {/* ── AUTO INSIGHTS ── */}
           <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"1.5rem" }}>
             <div style={{ fontSize:14, fontWeight:600, color:C.text, marginBottom:16 }}>🔍 Auto Insights</div>
             <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
@@ -1570,9 +1665,9 @@ function BacktestingView({ trades, convertPnl, currSym }) {
 }
 
 /* ═══════════════════════════════════════
-   SETTINGS VIEW
+   SETTINGS VIEW — with Trading Mode switcher
 ═══════════════════════════════════════ */
-function SettingsView({ displayCurrency, onCurrencyChange, rates, loadingRates, theme, onThemeChange }) {
+function SettingsView({ displayCurrency, onCurrencyChange, rates, loadingRates, theme, onThemeChange, tradingMode, onTradingModeChange }) {
   return (
     <div style={{ padding:"2rem", fontFamily:"sans-serif", overflowY:"auto", flex:1, background:C.bg }}>
       <div style={{ marginBottom:"1.75rem" }}>
@@ -1580,39 +1675,61 @@ function SettingsView({ displayCurrency, onCurrencyChange, rates, loadingRates, 
         <p style={{ color:C.textSec, fontSize:14, margin:0 }}>Customize your trading journal experience.</p>
       </div>
 
-      <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"1.75rem", maxWidth:500 }}>
+      <div style={{ display:"flex", flexDirection:"column", gap:16, maxWidth:580 }}>
 
-        {/* THEME TOGGLE */}
-        <div style={{ marginBottom:"1.5rem" }}>
+        {/* ── TRADING MODE SWITCHER ── */}
+        <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"1.75rem" }}>
+          <div style={{ fontSize:15, fontWeight:700, color:C.text, marginBottom:4 }}>Trading Mode</div>
+          <div style={{ fontSize:13, color:C.textSec, marginBottom:20, lineHeight:1.65 }}>
+            Switch your entire trading environment. Each mode has its own forms, fields, strategies, and analytics. Your trade data is always saved separately per mode — never mixed.
+          </div>
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+            {Object.values(TRADING_MODES).map(mode => {
+              const isActive = tradingMode === mode.id;
+              return (
+                <div key={mode.id} onClick={()=>onTradingModeChange(mode.id)}
+                  style={{ border: isActive ? `2px solid ${mode.accent}` : `1px solid ${C.border}`, borderRadius:14, padding:"1.25rem", cursor:"pointer", background: isActive ? mode.accentSoft : "transparent", position:"relative", transition:"all 0.2s" }}>
+                  {isActive && (
+                    <div style={{ position:"absolute", top:-10, left:14, background:mode.accent, color: mode.id==="fo" ? "#fff" : "#07090c", fontSize:10, fontWeight:700, padding:"2px 10px", borderRadius:20 }}>ACTIVE</div>
+                  )}
+                  <div style={{ fontSize:26, marginBottom:10 }}>{mode.icon}</div>
+                  <div style={{ fontSize:15, fontWeight:700, color: isActive ? mode.accent : C.text, marginBottom:4 }}>{mode.fullLabel}</div>
+                  <div style={{ fontSize:12, color:C.textSec, marginBottom:12 }}>{mode.description}</div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+                    {mode.defaultSymbols.slice(0,4).map(s => (
+                      <span key={s} style={{ fontSize:10, fontWeight:600, padding:"2px 7px", borderRadius:4, background: isActive ? `${mode.accent}20` : C.surface, color: isActive ? mode.accent : C.textSec, border:`1px solid ${isActive ? mode.accentBorder : C.border}` }}>{s}</span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ marginTop:16, padding:"0.75rem 1rem", background:C.surface, borderRadius:9, border:`1px solid ${C.border}`, fontSize:12, color:C.textSec, lineHeight:1.7 }}>
+            <strong style={{ color:C.text }}>Currently active:</strong> {TRADING_MODES[tradingMode].fullLabel} mode — {TRADING_MODES[tradingMode].description}.<br/>
+            Switching modes changes sidebar labels, log trade form, default symbols, strategies, and analytics context. Your existing trades are always preserved.
+          </div>
+        </div>
+
+        {/* ── THEME ── */}
+        <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"1.75rem" }}>
           <div style={{ fontSize:15, fontWeight:700, color:C.text, marginBottom:4 }}>Theme</div>
           <div style={{ fontSize:13, color:C.textSec, marginBottom:16 }}>Choose your preferred display theme.</div>
           <div style={{ display:"flex", gap:0, background:C.surface, borderRadius:10, padding:4, maxWidth:280 }}>
             {[["dark","🌙 Dark"],["light","☀️ Light"]].map(([t, label]) => (
-              <button key={t} onClick={()=>onThemeChange(t)} style={{
-                flex:1, padding:"0.65rem 1rem", borderRadius:8, border:"none",
-                background: theme===t ? C.red : "transparent",
-                color: theme===t ? "#fff" : C.textSec,
-                fontWeight:600, cursor:"pointer", fontSize:14, fontFamily:"inherit",
-                transition:"all 0.2s"
-              }}>{label}</button>
+              <button key={t} onClick={()=>onThemeChange(t)} style={{ flex:1, padding:"0.65rem 1rem", borderRadius:8, border:"none", background:theme===t?C.red:"transparent", color:theme===t?"#fff":C.textSec, fontWeight:600, cursor:"pointer", fontSize:14, fontFamily:"inherit", transition:"all 0.2s" }}>{label}</button>
             ))}
           </div>
         </div>
 
-        <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:"1.5rem", marginBottom:"1.5rem" }}>
+        {/* ── CURRENCY ── */}
+        <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"1.75rem" }}>
           <div style={{ fontSize:15, fontWeight:700, color:C.text, marginBottom:4 }}>Display Currency</div>
-          <div style={{ fontSize:13, color:C.textSec, marginBottom:16 }}>
-            All P&L, dashboard stats and analytics will be shown in this currency using live exchange rates.
-          </div>
+          <div style={{ fontSize:13, color:C.textSec, marginBottom:16 }}>All P&L, dashboard stats and analytics shown in this currency using live exchange rates.</div>
           <div style={{ display:"flex", gap:12 }}>
             {CURRENCIES_LIST.map(c => (
-              <button key={c.code} onClick={()=>onCurrencyChange(c.code)} style={{
-                flex:1, padding:"1rem", borderRadius:12,
-                border:`2px solid ${displayCurrency===c.code ? C.red : C.border}`,
-                background: displayCurrency===c.code ? C.redSoft : "transparent",
-                color: displayCurrency===c.code ? C.red : C.textSec,
-                cursor:"pointer", fontFamily:"inherit", textAlign:"center", transition:"all 0.2s"
-              }}>
+              <button key={c.code} onClick={()=>onCurrencyChange(c.code)} style={{ flex:1, padding:"1rem", borderRadius:12, border:`2px solid ${displayCurrency===c.code?C.red:C.border}`, background:displayCurrency===c.code?C.redSoft:"transparent", color:displayCurrency===c.code?C.red:C.textSec, cursor:"pointer", fontFamily:"inherit", textAlign:"center", transition:"all 0.2s" }}>
                 <div style={{ fontSize:24, marginBottom:4 }}>{c.symbol}</div>
                 <div style={{ fontSize:13, fontWeight:700 }}>{c.code}</div>
                 <div style={{ fontSize:11 }}>{c.name}</div>
@@ -1635,13 +1752,16 @@ function SettingsView({ displayCurrency, onCurrencyChange, rates, loadingRates, 
           )}
         </div>
 
-        <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:"1.5rem" }}>
+        {/* ── ABOUT ── */}
+        <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"1.75rem" }}>
           <div style={{ fontSize:15, fontWeight:700, color:C.text, marginBottom:4 }}>About</div>
           <div style={{ fontSize:13, color:C.textSec, lineHeight:1.7 }}>
-            RedRain Traders v1.0 · Built for serious traders worldwide 🌍<br/>
+            RedRain Traders v2.0 · F&O + Forex dual environment 🚀<br/>
+            Built for serious traders worldwide 🌍<br/>
             Exchange rates updated daily via ExchangeRate-API.
           </div>
         </div>
+
       </div>
     </div>
   );
@@ -1651,22 +1771,27 @@ function SettingsView({ displayCurrency, onCurrencyChange, rates, loadingRates, 
    MAIN APP
 ═══════════════════════════════════════ */
 export default function App() {
-  const [screen, setScreen] = useState("landing");
-  const [tab, setTab]       = useState("dashboard");
-  const [user, setUser]     = useState({ name:"", id:"" });
-  const [trades, setTrades] = useState([]);
+  const [screen, setScreen]   = useState("landing");
+  const [tab, setTab]         = useState("dashboard");
+  const [user, setUser]       = useState({ name:"", id:"" });
+  const [trades, setTrades]   = useState([]);
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
   const [displayCurrency, setDisplayCurrency] = useState(() => localStorage.getItem("rr_currency") || "USD");
-  const [rates, setRates] = useState({});
+  const [rates, setRates]         = useState({});
   const [loadingRates, setLoadingRates] = useState(false);
-  const [theme, setTheme] = useState(() => localStorage.getItem("rr_theme") || "dark");
-  const [newPass, setNewPass] = useState("");
+  const [theme, setTheme]         = useState(() => localStorage.getItem("rr_theme") || "dark");
+
+  // ── TRADING MODE ── stored in localStorage, default "fo" for Indian traders
+  const [tradingMode, setTradingMode] = useState(() => localStorage.getItem("rr_trading_mode") || "fo");
+
+  const [newPass, setNewPass]           = useState("");
   const [newPassConfirm, setNewPassConfirm] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
-  const [resetMsg, setResetMsg] = useState("");
+  const [resetMsg, setResetMsg]         = useState("");
 
-  // Apply theme
+  // Apply theme globally
   C = theme === "light" ? { ...LIGHT_THEME } : { ...DARK_THEME };
 
   const handleThemeChange = (t) => {
@@ -1674,16 +1799,24 @@ export default function App() {
     localStorage.setItem("rr_theme", t);
   };
 
-  // Check if user is already logged in (session persists across page refresh)
+  const handleTradingModeChange = (newMode) => {
+    setTradingMode(newMode);
+    localStorage.setItem("rr_trading_mode", newMode);
+    // Switch to dashboard when mode changes
+    setTab("dashboard");
+    // Auto-set display currency to match mode default
+    const modeDefaultCurrency = TRADING_MODES[newMode].defaultCurrency;
+    setDisplayCurrency(modeDefaultCurrency);
+    localStorage.setItem("rr_currency", modeDefaultCurrency);
+  };
+
   useEffect(()=>{
-    // ── IMMEDIATELY check URL hash for password recovery ──
     const hash = window.location.hash;
     const params = new URLSearchParams(hash.replace("#","?"));
     const isRecovery = params.get("type") === "recovery";
     const accessToken = params.get("access_token");
 
-    if(isRecovery && accessToken) {
-      // Set session from URL tokens then show reset screen
+    if (isRecovery && accessToken) {
       supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: params.get("refresh_token") || ""
@@ -1695,7 +1828,7 @@ export default function App() {
     }
 
     supabase.auth.getSession().then(({ data:{ session } })=>{
-      if(session){
+      if (session) {
         const name = session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "Trader";
         setUser({ name, id:session.user.id });
         setScreen("app");
@@ -1703,11 +1836,9 @@ export default function App() {
       }
     });
     const { data:{ subscription } } = supabase.auth.onAuthStateChange((event, session)=>{
-      if(event === "PASSWORD_RECOVERY") {
+      if (event === "PASSWORD_RECOVERY") {
         setScreen("resetPassword");
-      } else if(event === "SIGNED_IN" && screen === "resetPassword") {
-        // stay on reset screen
-      } else if(!session) {
+      } else if (!session && event !== "PASSWORD_RECOVERY") {
         setScreen("landing"); setUser({ name:"", id:"" }); setTrades([]);
       }
     });
@@ -1741,7 +1872,7 @@ export default function App() {
   const loadTrades = async (userId) => {
     setLoading(true);
     const { data } = await supabase.from("trades").select("*").eq("user_id",userId).order("date",{ ascending:false });
-    if(data) setTrades(data);
+    if (data) setTrades(data);
     setLoading(false);
   };
 
@@ -1765,10 +1896,19 @@ export default function App() {
     setTrades(prev=>prev.filter(t=>t.id!==id));
   };
 
-  if(screen==="landing") return <LandingPage onGetStarted={()=>setScreen("auth")}/>;
-  if(screen==="auth") return <AuthPage onLogin={handleLogin} onBack={()=>setScreen("landing")}/>;
+  // Filter trades by current trading mode
+  const filteredTrades = useMemo(()=>
+    trades.filter(t => t.trade_mode === tradingMode),
+    [trades, tradingMode]
+  );
 
-  if(screen==="resetPassword") return (
+  const modeConfig = TRADING_MODES[tradingMode];
+  const modeAccent = modeConfig.accent;
+
+  if (screen==="landing") return <LandingPage onGetStarted={()=>setScreen("auth")}/>;
+  if (screen==="auth") return <AuthPage onLogin={handleLogin} onBack={()=>setScreen("landing")}/>;
+
+  if (screen==="resetPassword") return (
     <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"sans-serif", padding:"2rem" }}>
       <div style={{ width:"100%", maxWidth:400 }}>
         <div style={{ textAlign:"center", marginBottom:"2rem" }}>
@@ -1789,12 +1929,12 @@ export default function App() {
               placeholder="repeat password" value={newPassConfirm} onChange={e=>setNewPassConfirm(e.target.value)}/>
           </div>
           <button disabled={resetLoading} onClick={async()=>{
-            if(newPass !== newPassConfirm) { setResetMsg("❌ Passwords do not match!"); return; }
-            if(newPass.length < 6) { setResetMsg("❌ Password must be at least 6 characters."); return; }
+            if (newPass !== newPassConfirm) { setResetMsg("❌ Passwords do not match!"); return; }
+            if (newPass.length < 6) { setResetMsg("❌ Password must be at least 6 characters."); return; }
             setResetLoading(true);
             const { error } = await supabase.auth.updateUser({ password: newPass });
             setResetLoading(false);
-            if(error) { setResetMsg("❌ " + error.message); }
+            if (error) { setResetMsg("❌ " + error.message); }
             else {
               setResetMsg("✅ Password updated! Redirecting to login...");
               setTimeout(()=>{ setScreen("auth"); setNewPass(""); setNewPassConfirm(""); setResetMsg(""); }, 2000);
@@ -1807,13 +1947,40 @@ export default function App() {
     </div>
   );
 
+  const tabLabels = {
+    dashboard:"Overview",
+    add: modeConfig.logTradeLabel,
+    history: modeConfig.historyLabel,
+    analytics:"Performance",
+    backtesting:"Backtesting",
+    settings:"Settings"
+  };
+
   return (
     <div style={{ display:"flex", height:"100vh", background:C.bg, fontFamily:"sans-serif", overflow:"hidden" }}>
-      <Sidebar active={tab} setActive={setTab} userName={user.name} onLogout={handleLogout} isOpen={sidebarOpen} onToggle={()=>setSidebarOpen(v=>!v)}/>
+      <Sidebar
+        active={tab}
+        setActive={setTab}
+        userName={user.name}
+        onLogout={handleLogout}
+        isOpen={sidebarOpen}
+        onToggle={()=>setSidebarOpen(v=>!v)}
+        tradingMode={tradingMode}
+      />
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+        {/* TOP BAR */}
         <div style={{ padding:"0.85rem 2rem", borderBottom:`1px solid ${C.border}`, background:C.surface, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <div style={{ fontSize:13, color:C.textSec }}>
-            {{dashboard:"Overview",add:"New Trade",history:"All Trades",analytics:"Performance",backtesting:"Backtesting",settings:"Settings"}[tab]}
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <div style={{ fontSize:13, color:C.textSec }}>{tabLabels[tab]}</div>
+            {/* Quick mode switcher in top bar */}
+            <div style={{ display:"flex", gap:0, background:C.bg, border:`1px solid ${C.border}`, borderRadius:7, padding:2 }}>
+              {Object.values(TRADING_MODES).map(mode => (
+                <button key={mode.id} onClick={()=>handleTradingModeChange(mode.id)} title={`Switch to ${mode.fullLabel}`}
+                  style={{ padding:"3px 10px", borderRadius:5, border:"none", background: tradingMode===mode.id ? mode.accent : "transparent", color: tradingMode===mode.id ? (mode.id==="fo"?"#fff":"#07090c") : C.textSec, fontWeight:700, cursor:"pointer", fontSize:11, fontFamily:"inherit", transition:"all 0.15s" }}>
+                  {mode.icon} {mode.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
             <div style={{ width:30, height:30, borderRadius:"50%", background:C.redSoft, border:`1px solid ${C.redBorder}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color:C.red }}>
@@ -1822,17 +1989,29 @@ export default function App() {
             <span style={{ fontSize:13, color:C.text }}>{user.name||"Trader"}</span>
           </div>
         </div>
+
+        {/* MAIN CONTENT */}
         <div style={{ flex:1, overflow:"hidden", display:"flex" }}>
           {loading ? (
             <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:C.textSec, fontSize:14 }}>Loading your trades...</div>
           ) : (
             <>
-              {tab==="dashboard"    && <DashboardView trades={trades} setActive={setTab} userName={user.name||"Trader"} convertPnl={convertPnl} currSym={currSym}/>}
-              {tab==="add"          && <AddTradeView onAdd={addTrade} userId={user.id}/>}
-              {tab==="history"      && <HistoryView trades={trades} onDelete={deleteTrade} convertPnl={convertPnl} currSym={currSym}/>}
-              {tab==="analytics"    && <AnalyticsView trades={trades} convertPnl={convertPnl} currSym={currSym}/>}
-              {tab==="backtesting"  && <BacktestingView trades={trades} convertPnl={convertPnl} currSym={currSym}/>}
-              {tab==="settings"     && <SettingsView displayCurrency={displayCurrency} onCurrencyChange={handleCurrencyChange} rates={rates} loadingRates={loadingRates} theme={theme} onThemeChange={handleThemeChange}/>}
+              {tab==="dashboard"   && <DashboardView   trades={filteredTrades} setActive={setTab} userName={user.name||"Trader"} convertPnl={convertPnl} currSym={currSym} tradingMode={tradingMode}/>}
+              {tab==="add"         && tradingMode==="fo"    && <AddFOTradeView    onAdd={addTrade} userId={user.id}/>}
+              {tab==="add"         && tradingMode==="forex" && <AddForexTradeView onAdd={addTrade} userId={user.id}/>}
+              {tab==="history"     && <HistoryView     trades={filteredTrades} onDelete={deleteTrade} convertPnl={convertPnl} currSym={currSym} tradingMode={tradingMode}/>}
+              {tab==="analytics"   && <AnalyticsView   trades={filteredTrades} convertPnl={convertPnl} currSym={currSym} tradingMode={tradingMode}/>}
+              {tab==="backtesting" && <BacktestingView trades={filteredTrades} convertPnl={convertPnl} currSym={currSym} tradingMode={tradingMode}/>}
+              {tab==="settings"    && <SettingsView
+                displayCurrency={displayCurrency}
+                onCurrencyChange={handleCurrencyChange}
+                rates={rates}
+                loadingRates={loadingRates}
+                theme={theme}
+                onThemeChange={handleThemeChange}
+                tradingMode={tradingMode}
+                onTradingModeChange={handleTradingModeChange}
+              />}
             </>
           )}
         </div>

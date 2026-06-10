@@ -770,6 +770,10 @@ function AddFOTradeView({ onAdd, userId }) {
   const [favourites, setFavourites] = useState(() => {
     try { return JSON.parse(localStorage.getItem("rr_fav_assets_fo") || '["NIFTY","BANKNIFTY","FINNIFTY"]'); } catch { return ["NIFTY","BANKNIFTY","FINNIFTY"]; }
   });
+  const [favStrats, setFavStrats] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("rr_fav_strats_fo") || '["Option Buy","Option Sell","Straddle","Scalp"]'); } catch { return ["Option Buy","Option Sell","Straddle","Scalp"]; }
+  });
+  const [stratOpen, setStratOpen] = useState(false);
 
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
 
@@ -942,11 +946,30 @@ function AddFOTradeView({ onAdd, userId }) {
             <label style={lbl}>No. of Lots</label>
             <input type="number" min="0" step="1" style={inp} placeholder="1" value={form.qty} onChange={e=>set("qty",e.target.value)}/>
           </div>
-          <div>
+          <div style={{ position:"relative" }}>
             <label style={lbl}>Strategy</label>
-            <select style={{ ...inp, cursor:"pointer" }} value={form.strategy} onChange={e=>set("strategy",e.target.value)}>
-              {mode.defaultStrategies.map(s=><option key={s}>{s}</option>)}
-            </select>
+            <div style={{ display:"flex", gap:8 }}>
+              <input style={inp} placeholder="Type or pick strategy..." value={form.strategy} onChange={e=>set("strategy",e.target.value)}/>
+              <button onClick={()=>favStrats.length>0&&setStratOpen(v=>!v)}
+                style={{ background:stratOpen?"rgba(74,158,255,0.12)":"rgba(74,158,255,0.06)", border:`1.5px solid ${stratOpen?"#4a9eff":"rgba(74,158,255,0.35)"}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:13, flexShrink:0, color:stratOpen?"#4a9eff":"rgba(74,158,255,0.7)", fontWeight:700 }}>▼</button>
+              <button onClick={()=>{const s=form.strategy.trim();if(!s)return;const u=favStrats.includes(s)?favStrats.filter(x=>x!==s):[...favStrats,s];setFavStrats(u);localStorage.setItem("rr_fav_strats_fo",JSON.stringify(u));}}
+                style={{ background:favStrats.includes(form.strategy.trim())?"rgba(245,166,35,0.2)":"rgba(245,166,35,0.06)", border:`1.5px solid ${favStrats.includes(form.strategy.trim())?"#f5a623":"rgba(245,166,35,0.4)"}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:18, flexShrink:0, color:"#f5a623" }}>
+                {favStrats.includes(form.strategy.trim())?"⭐":"☆"}
+              </button>
+            </div>
+            {stratOpen && favStrats.length>0 && (
+              <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:C.card, border:`1px solid ${C.border}`, borderRadius:10, zIndex:100, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
+                {favStrats.map((s,i)=>(
+                  <div key={s} onClick={()=>{ set("strategy",s); setStratOpen(false); }}
+                    style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0.65rem 1rem", fontSize:14, color:form.strategy===s?C.red:C.text, background:form.strategy===s?C.redSoft:"transparent", borderBottom:i<favStrats.length-1?`1px solid ${C.border}`:"none", cursor:"pointer" }}
+                    onMouseEnter={e=>e.currentTarget.style.background=C.cardHover}
+                    onMouseLeave={e=>e.currentTarget.style.background=form.strategy===s?C.redSoft:"transparent"}>
+                    <span>{s}</span>
+                    <span onClick={e=>{e.stopPropagation();const u=favStrats.filter(x=>x!==s);setFavStrats(u);localStorage.setItem("rr_fav_strats_fo",JSON.stringify(u));}} style={{ fontSize:12, color:C.textSec, cursor:"pointer", padding:"2px 6px" }}>✕</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1030,6 +1053,10 @@ function AddForexTradeView({ onAdd, userId }) {
   const [favourites, setFavourites] = useState(() => {
     try { return JSON.parse(localStorage.getItem("rr_fav_assets_forex") || '["EURUSD","XAUUSD","GBPUSD"]'); } catch { return ["EURUSD","XAUUSD","GBPUSD"]; }
   });
+  const [favStrats, setFavStrats] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("rr_fav_strats_forex") || '["Trend Follow","Reversal","Breakout","Scalp"]'); } catch { return ["Trend Follow","Reversal","Breakout","Scalp"]; }
+  });
+  const [stratOpen, setStratOpen] = useState(false);
 
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
 
@@ -1143,11 +1170,30 @@ function AddForexTradeView({ onAdd, userId }) {
               onKeyDown={e=>{ if(["-","e","E","+"].includes(e.key)) e.preventDefault(); }}
               onChange={e=>{ const v = e.target.value; if(v===""||/^\d*\.?\d{0,2}$/.test(v)) set("lotSize",v); }}/>
           </div>
-          <div>
+          <div style={{ position:"relative" }}>
             <label style={lbl}>Strategy</label>
-            <select style={{ ...inp, cursor:"pointer" }} value={form.strategy} onChange={e=>set("strategy",e.target.value)}>
-              {mode.defaultStrategies.map(s=><option key={s}>{s}</option>)}
-            </select>
+            <div style={{ display:"flex", gap:8 }}>
+              <input style={inp} placeholder="Type or pick strategy..." value={form.strategy} onChange={e=>set("strategy",e.target.value)}/>
+              <button onClick={()=>favStrats.length>0&&setStratOpen(v=>!v)}
+                style={{ background:stratOpen?"rgba(74,158,255,0.12)":"rgba(74,158,255,0.06)", border:`1.5px solid ${stratOpen?"#4a9eff":"rgba(74,158,255,0.35)"}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:13, flexShrink:0, color:stratOpen?"#4a9eff":"rgba(74,158,255,0.7)", fontWeight:700 }}>▼</button>
+              <button onClick={()=>{const s=form.strategy.trim();if(!s)return;const u=favStrats.includes(s)?favStrats.filter(x=>x!==s):[...favStrats,s];setFavStrats(u);localStorage.setItem("rr_fav_strats_forex",JSON.stringify(u));}}
+                style={{ background:favStrats.includes(form.strategy.trim())?"rgba(245,166,35,0.2)":"rgba(245,166,35,0.06)", border:`1.5px solid ${favStrats.includes(form.strategy.trim())?"#f5a623":"rgba(245,166,35,0.4)"}`, borderRadius:9, padding:"0 0.75rem", cursor:"pointer", fontSize:18, flexShrink:0, color:"#f5a623" }}>
+                {favStrats.includes(form.strategy.trim())?"⭐":"☆"}
+              </button>
+            </div>
+            {stratOpen && favStrats.length>0 && (
+              <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:C.card, border:`1px solid ${C.border}`, borderRadius:10, zIndex:100, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
+                {favStrats.map((s,i)=>(
+                  <div key={s} onClick={()=>{ set("strategy",s); setStratOpen(false); }}
+                    style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0.65rem 1rem", fontSize:14, color:form.strategy===s?C.red:C.text, background:form.strategy===s?C.redSoft:"transparent", borderBottom:i<favStrats.length-1?`1px solid ${C.border}`:"none", cursor:"pointer" }}
+                    onMouseEnter={e=>e.currentTarget.style.background=C.cardHover}
+                    onMouseLeave={e=>e.currentTarget.style.background=form.strategy===s?C.redSoft:"transparent"}>
+                    <span>{s}</span>
+                    <span onClick={e=>{e.stopPropagation();const u=favStrats.filter(x=>x!==s);setFavStrats(u);localStorage.setItem("rr_fav_strats_forex",JSON.stringify(u));}} style={{ fontSize:12, color:C.textSec, cursor:"pointer", padding:"2px 6px" }}>✕</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1898,7 +1944,11 @@ export default function App() {
 
   // Filter trades by current trading mode
   const filteredTrades = useMemo(()=>
-    trades.filter(t => t.trade_mode === tradingMode),
+    trades.filter(t => {
+      if (tradingMode === "fo") return t.trade_mode === "fo";
+      if (tradingMode === "forex") return t.trade_mode === "forex" || t.trade_mode === "cfd";
+      return true;
+    }),
     [trades, tradingMode]
   );
 
